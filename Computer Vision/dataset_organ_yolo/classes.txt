@@ -1,0 +1,16 @@
+Otak
+Kepala
+Tenggorokan
+Dada_Luar
+Dada_Dalam
+Rusuk
+Paru-Paru_Kanan
+Paru-paru_Kiri
+Jantung
+Ginjal_Luar
+Ginjal_Dalam
+Hati
+Lambung
+Usus
+Penis
+Vagina
