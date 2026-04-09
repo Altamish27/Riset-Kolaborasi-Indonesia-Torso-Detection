@@ -112,6 +112,9 @@ dependencies {
 
     // ONNX Runtime for on-device inference
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // TensorFlow Lite for on-device inference
+    implementation("org.tensorflow:tensorflow-lite:2.11.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // DataStore Preferences (for onboarding first-launch tracking)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
