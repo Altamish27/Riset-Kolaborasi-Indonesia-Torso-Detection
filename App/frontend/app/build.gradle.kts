@@ -63,9 +63,10 @@ android {
         }
     }
 
-    // Don't compress TFLite model files
+    // Don't compress model files
     androidResources {
         noCompress.add("tflite")
+        noCompress.add("onnx")
     }
 }
 
@@ -109,11 +110,8 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // TFLite Object Detection
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    // ONNX Runtime for on-device inference
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
     // DataStore Preferences (for onboarding first-launch tracking)
     implementation("androidx.datastore:datastore-preferences:1.0.0")

@@ -67,8 +67,8 @@ import java.util.Locale
  * Page 1 — "Mode Scan Anatomi"
  *
  * Full-screen CameraX preview with:
- *   - ScanOverlay (scanning wave + bounding box from TFLite or mock)
- *   - TFLite real object detection with mock fallback
+ *   - ScanOverlay (scanning wave + bounding box from ONNX or mock)
+ *   - ONNX Runtime real object detection with mock fallback
  *   - 1.5s detection hold → TTS prompt → voice confirmation
  *   - On "Ya" → Request LLM explanation → Popup slides up + TTS plays explanation
  *   - "Baca Penjelasan" manual button in text-only mode
@@ -106,9 +106,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         debugLogs = (listOf("[$stamp] $message") + debugLogs).take(8)
     }
 
-    // TFLite analyzer
+    // ONNX analyzer
     val analyzer = remember {
-        TFLiteObjectAnalyzer(
+        OnnxObjectAnalyzer(
             context = context,
             onDetection = { detection ->
                 if (!isWaitingConfirmation && confirmedOrgan == null && !showPopup) {
