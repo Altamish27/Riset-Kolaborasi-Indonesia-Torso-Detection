@@ -22,34 +22,49 @@ class ChatRepository(
      * Connect to chat WebSocket
      */
     fun connectChat(): Flow<ChatResponse>? {
-        val token = TokenManager.getAccessToken(context)
-        if (token.isNullOrBlank()) {
-            Log.e(TAG, "No access token available for chat connection")
-            return null
-        }
+        return try {
+            val token = TokenManager.getAccessToken(context)
+            if (token.isNullOrBlank()) {
+                Log.e(TAG, "No access token available for chat connection")
+                return null
+            }
 
-        // Ensure stale socket is closed before opening a new one
-        disconnectChat()
-        
-        chatWebSocket = ChatWebSocketClient(httpClient)
-        chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
-        return chatWebSocket?.messages
+            // Ensure stale socket is closed before opening a new one
+            disconnectChat()
+            
+            chatWebSocket = ChatWebSocketClient(httpClient)
+            chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
+            chatWebSocket?.messages
+        } catch (e: Exception) {
+            Log.e(TAG, "Error connecting to chat WebSocket", e)
+            null
+        }
     }
     
     /**
      * Send a chat message
      */
     fun sendChatMessage(sessionId: String?, content: String): Boolean {
-        val message = mutableMapOf<String, String>(
-            "action" to "send_message",
-            "content" to content
-        )
-        
-        if (sessionId != null) {
-            message["session_id"] = sessionId
+        return try {
+            if (content.isBlank()) {
+                Log.e(TAG, "Cannot send empty message")
+                return false
+            }
+            
+            val message = mutableMapOf<String, String>(
+                "action" to "send_message",
+                "content" to content
+            )
+            
+            if (sessionId != null) {
+                message["session_id"] = sessionId
+            }
+            
+            chatWebSocket?.send(message) == true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending chat message", e)
+            false
         }
-        
-        return chatWebSocket?.send(message) == true
     }
     
     /**
@@ -80,7 +95,11 @@ class ChatRepository(
      * Disconnect from chat WebSocket
      */
     fun disconnectChat() {
-        chatWebSocket?.disconnect()
+        try {
+            chatWebSocket?.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error disconnecting chat websocket", e)
+        }
         chatWebSocket = null
     }
     
@@ -126,7 +145,11 @@ class ChatRepository(
      * Disconnect from voice WebSocket
      */
     fun disconnectVoice() {
-        voiceWebSocket?.disconnect()
+        try {
+            voiceWebSocket?.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error disconnecting voice websocket", e)
+        }
         voiceWebSocket = null
     }
     

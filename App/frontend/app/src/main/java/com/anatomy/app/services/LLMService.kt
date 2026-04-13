@@ -70,8 +70,41 @@ class LLMService(private val context: Context) {
             Log.e(TAG, "Error getting LLM explanation for $organName", e)
             "Maaf, tidak dapat mendapatkan penjelasan saat ini."
         } finally {
-            // Optionally disconnect after getting explanation
-            // (can keep connection open for performance)
+            // Important: release /ws/chat so other features (QnA page) can connect reliably.
+            disconnect()
+        }
+    }
+
+    /**
+     * Ask a follow-up question about a specific organ in the same chat channel.
+     */
+    suspend fun askQuestionAboutOrgan(organName: String, question: String): String {
+        if (!isValidOrganName(organName)) {
+            return "Organ tidak valid untuk pertanyaan lanjutan."
+        }
+        if (question.isBlank()) {
+            return "Pertanyaan masih kosong."
+        }
+
+        return try {
+            val prompt = "Konteks organ: $organName. " +
+                "Jawab pertanyaan berikut secara singkat dan jelas dalam bahasa Indonesia: $question"
+
+            val answer = requestViaWebSocket(prompt)
+            if (answer.isBlank()) {
+                "Maaf, saya belum bisa menjawab pertanyaan itu saat ini."
+            } else {
+                answer
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Timeout follow-up question for $organName")
+            "Maaf, backend terlalu lama merespons pertanyaan lanjutan."
+        } catch (e: Exception) {
+            Log.e(TAG, "Error follow-up question for $organName", e)
+            "Maaf, terjadi gangguan saat memproses pertanyaan lanjutan."
+        } finally {
+            // Keep scan LLM channel isolated to avoid interfering with dedicated chat mode.
+            disconnect()
         }
     }
     
@@ -92,24 +125,34 @@ class LLMService(private val context: Context) {
                     return@withContext ""
                 }
                 
-                // Create or reuse WebSocket connection
-                if (chatWebSocket == null) {
-                    chatWebSocket = ChatWebSocketClient(httpClient)
-                    chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
-                    val authResult = withTimeoutOrNull(12_000L) {
-                        chatWebSocket?.messages?.firstOrNull { msg ->
-                            msg.action == "authenticated" || msg.error != null
-                        }
-                    }
-                    if (authResult == null || authResult.error != null) {
-                        Log.e(TAG, "WebSocket auth failed or timed out: ${authResult?.error}")
-                        return@withContext ""
+                // Always create fresh WebSocket connection for LLM requests
+                disconnect()
+                chatWebSocket = ChatWebSocketClient(httpClient)
+                chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
+                
+                // Wait for authentication with shorter timeout
+                val authResult = withTimeoutOrNull(10_000L) {
+                    chatWebSocket?.messages?.firstOrNull { msg ->
+                        msg.action == "authenticated" || msg.error != null
                     }
                 }
                 
-                // Create session if needed
-                if (currentSessionId == null) {
-                    setupSession()
+                if (authResult == null) {
+                    Log.e(TAG, "WebSocket auth timed out")
+                    return@withContext ""
+                }
+                
+                if (authResult.error != null) {
+                    Log.e(TAG, "WebSocket auth failed: ${authResult.error}")
+                    return@withContext ""
+                }
+                
+                Log.d(TAG, "WebSocket authenticated successfully")
+                
+                // Create session
+                if (!setupSession()) {
+                    Log.e(TAG, "Failed to setup session")
+                    return@withContext ""
                 }
                 
                 // Send the prompt
@@ -120,18 +163,28 @@ class LLMService(private val context: Context) {
                 currentSessionId?.let { sid ->
                     payload["session_id"] = sid
                 }
-                chatWebSocket?.send(payload)
                 
-                Log.d(TAG, "Prompt sent via WebSocket")
+                val sendResult = chatWebSocket?.send(payload)
+                if (sendResult != true) {
+                    Log.e(TAG, "Failed to send prompt")
+                    return@withContext ""
+                }
                 
-                // Wait for response (max 30 seconds)
-                val response = withTimeoutOrNull(30_000L) {
+                Log.d(TAG, "Prompt sent via WebSocket, waiting for response...")
+                
+                // Wait for response with reasonable timeout
+                val response = withTimeoutOrNull(25_000L) {
                     chatWebSocket?.messages?.firstOrNull { chatResponse ->
-                        chatResponse.action == "chat_response"
+                        chatResponse.action == "chat_response" && !chatResponse.answer.isNullOrBlank()
                     }
-                } ?: return@withContext ""
+                }
+                
+                if (response == null) {
+                    Log.e(TAG, "No response received within timeout")
+                    return@withContext ""
+                }
 
-                response.answer?.takeIf { it.isNotBlank() }
+                val answer = response.answer?.takeIf { it.isNotBlank() }
                     ?: response.assistant_message
                         ?.jsonObject
                         ?.get("content")
@@ -140,6 +193,12 @@ class LLMService(private val context: Context) {
                         ?.trim()
                         .orEmpty()
                 
+                Log.d(TAG, "Received answer: ${answer.take(100)}...")
+                return@withContext answer
+                
+            } catch (e: TimeoutCancellationException) {
+                Log.e(TAG, "Timeout in WebSocket request", e)
+                ""
             } catch (e: Exception) {
                 Log.e(TAG, "Error in WebSocket request", e)
                 ""
@@ -151,22 +210,33 @@ class LLMService(private val context: Context) {
      * Setup a new chat session via WebSocket.
      */
     @OptIn(FlowPreview::class)
-    private suspend fun setupSession() {
-        try {
-            chatWebSocket?.send(mapOf("action" to "create_session"))
+    private suspend fun setupSession(): Boolean {
+        return try {
+            val sendResult = chatWebSocket?.send(mapOf("action" to "create_session"))
+            if (sendResult != true) {
+                Log.e(TAG, "Failed to send create_session")
+                return false
+            }
             
             // Wait for session_created response
-            val sessionResponse = withTimeoutOrNull(10_000L) {
+            val sessionResponse = withTimeoutOrNull(8_000L) {
                 chatWebSocket?.messages?.firstOrNull { chatResponse ->
-                    chatResponse.action == "session_created"
+                    chatResponse.action == "session_created" && !chatResponse.session_id.isNullOrBlank()
                 }
-            } ?: return
+            }
+            
+            if (sessionResponse == null) {
+                Log.e(TAG, "Session creation timed out")
+                return false
+            }
             
             currentSessionId = sessionResponse.session_id
             Log.d(TAG, "Session created: $currentSessionId")
+            return true
             
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up session", e)
+            false
         }
     }
     
