@@ -305,3 +305,141 @@ class VoiceWebSocketClient(private val httpClient: OkHttpClient) {
         }
     }
 }
+
+class ScanWebSocketClient(private val httpClient: OkHttpClient) {
+    
+    private val TAG = "ScanWebSocketClient"
+    private var webSocket: WebSocket? = null
+    private val messageChannel = Channel<ChatResponse>(Channel.UNLIMITED)
+    private val decodeJson = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
+    private val encodeJson = Json { explicitNulls = false }
+    
+    val messages: Flow<ChatResponse> = messageChannel.receiveAsFlow()
+    
+    fun connect(baseUrl: String, token: String) {
+        try {
+            // Close existing connection first
+            disconnect()
+            
+            val wsUrl = baseUrl.replace("http", "ws") + AppConfig.getWsScanPathDefault()
+            val request = Request.Builder().url(wsUrl).build()
+            
+            webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                    Log.d(TAG, "Scan WebSocket connected to: $wsUrl")
+                    safeChannelSend(ChatResponse(action = "connected"))
+                    // Immediately authenticate
+                    val authMessage = mapOf(
+                        "action" to "authenticate",
+                        "token" to token
+                    )
+                    val authJson = encodeJson.encodeToString(authMessage)
+                    val sent = webSocket.send(authJson)
+                    if (!sent) {
+                        Log.e(TAG, "Failed to send scan auth payload on open")
+                    } else {
+                        Log.d(TAG, "Scan authentication message sent")
+                    }
+                }
+                
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    try {
+                        Log.d(TAG, "Received scan WebSocket message: ${text.take(200)}...")
+                        val response = decodeJson.decodeFromString<ChatResponse>(text)
+                        Log.d(TAG, "Parsed scan response action: ${response.action}")
+                        safeChannelSend(response)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing scan WebSocket message: $text", e)
+                        safeChannelSend(
+                            ChatResponse(
+                                action = "error",
+                                error = "Invalid server message format"
+                            )
+                        )
+                    }
+                }
+                
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    Log.d(TAG, "Scan WebSocket closing: $code $reason")
+                }
+                
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                    Log.e(TAG, "Scan WebSocket failure", t)
+                    safeChannelSend(
+                        ChatResponse(
+                            action = "error",
+                            error = t.message ?: "Connection failed"
+                        )
+                    )
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Error connecting scan WebSocket", e)
+            safeChannelSend(
+                ChatResponse(
+                    action = "error",
+                    error = e.message ?: "Connection error"
+                )
+            )
+        }
+    }
+    
+    private fun safeChannelSend(response: ChatResponse) {
+        try {
+            if (!messageChannel.isClosedForSend) {
+                val result = messageChannel.trySend(response)
+                if (result.isFailure) {
+                    Log.e(TAG, "Failed to send message to channel: ${result.exceptionOrNull()?.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending to channel", e)
+        }
+    }
+    
+    fun send(message: Map<String, String>): Boolean {
+        try {
+            if (webSocket == null) {
+                Log.e(TAG, "WebSocket is null, cannot send message")
+                return false
+            }
+            
+            val jsonString = encodeJson.encodeToString(message)
+            val sent = webSocket?.send(jsonString) == true
+            if (!sent) {
+                Log.e(TAG, "WebSocket send failed (scan). Socket may be closed.")
+                safeChannelSend(
+                    ChatResponse(
+                        action = "error",
+                        error = "Failed to send message: websocket not ready"
+                    )
+                )
+            }
+            return sent
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending scan message", e)
+            safeChannelSend(
+                ChatResponse(
+                    action = "error",
+                    error = "Failed to send message: ${e.message ?: "unknown error"}"
+                )
+            )
+            return false
+        }
+    }
+    
+    fun disconnect() {
+        try {
+            webSocket?.close(1000, "Client disconnect")
+            webSocket = null
+            if (!messageChannel.isClosedForSend) {
+                messageChannel.close()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during scan disconnect", e)
+        }
+    }
+}

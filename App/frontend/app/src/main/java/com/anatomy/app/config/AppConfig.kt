@@ -19,6 +19,7 @@ object AppConfig {
     private const val DEFAULT_BASE_URL = "http://43.157.235.115:8000"
     private const val DEFAULT_WS_CHAT_PATH = "/ws/chat"
     private const val DEFAULT_WS_VOICE_PATH = "/ws/voice"
+    private const val DEFAULT_WS_SCAN_PATH = "/ws/scan"
     
     /**
      * Get Base URL from configuration Stream or use default
@@ -70,6 +71,11 @@ object AppConfig {
      * Get WebSocket Voice Path value (non-blocking, uses default if not configured)
      */
     fun getWsVoicePathDefault(): String = DEFAULT_WS_VOICE_PATH
+    
+    /**
+     * Get WebSocket Scan Path value (for LLM scan AI requests)
+     */
+    fun getWsScanPathDefault(): String = DEFAULT_WS_SCAN_PATH
     
     /**
      * Set WebSocket Chat Path in configuration

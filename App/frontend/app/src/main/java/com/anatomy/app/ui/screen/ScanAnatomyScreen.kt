@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.dp
 import com.anatomy.app.helper.AudioAssistant
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.services.LLMService
-import com.anatomy.app.utils.WebSocketManager
 import com.anatomy.app.ui.theme.NeonAmber
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
@@ -341,10 +340,6 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             voiceHelper.destroy()
             llmService.disconnect()
             analyzer.close()
-            // Force release WebSocket connection on dispose
-            scope.launch {
-                WebSocketManager.forceRelease()
-            }
         }
     }
 

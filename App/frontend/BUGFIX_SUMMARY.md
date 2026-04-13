@@ -162,11 +162,46 @@
 ✅ Auto-retry jika connection timeout
 ✅ Better user feedback untuk semua scenarios
 
+## Final Solution: Separate WebSocket Endpoints ✅
+
+### The Ultimate Fix: No More WebSocket Conflicts!
+
+**Decision**: Pisah API dengan endpoint terpisah
+- **Scan AI**: `/ws/scan` - dedicated untuk LLMService
+- **Chatbot**: `/ws/chat` - dedicated untuk ChatRepository  
+- **Voice**: `/ws/voice` - untuk future voice features
+
+**Benefits**:
+✅ **Zero conflicts** - Scan dan Chatbot bisa jalan bersamaan
+✅ **Better UX** - User bisa langsung pindah halaman tanpa tunggu
+✅ **Simpler code** - Remove complex WebSocketManager
+✅ **Better performance** - No blocking antar fitur
+✅ **Scalable** - Easy to add new features
+
+### Implementation
+- `ScanWebSocketClient` - dedicated client untuk scan AI
+- `AppConfig.getWsScanPathDefault()` - `/ws/scan` endpoint
+- Remove WebSocketManager complexity
+- Simplified LLMService dan ChatRepository
+
+### Backend Requirement
+Backend perlu support endpoint `/ws/scan` yang sama functionality dengan `/ws/chat`
+
+### Code Changes
+- NEW: `ScanWebSocketClient` class
+- `AppConfig.kt`: Added `/ws/scan` endpoint
+- `LLMService.kt`: Use ScanWebSocketClient instead of ChatWebSocketClient
+- `ChatRepository.kt`: Simplified, remove WebSocketManager
+- `QnaScreen.kt`: Simplified connection logic
+- REMOVED: WebSocketManager complexity
+
 ## Next Steps
 
-1. Test aplikasi secara menyeluruh
-2. Test transisi dari scan ke chatbot dan sebaliknya
-3. Monitor logs untuk error yang mungkin masih ada
-4. Test retry mechanism
-5. Optimasi performance jika diperlukan
+1. **Backend Update**: Add `/ws/scan` endpoint support
+2. Test aplikasi secara menyeluruh
+3. Test concurrent usage: scan + chatbot bersamaan
+4. Monitor logs untuk memastikan no conflicts
+5. Performance testing dengan multiple connections
 6. Consider adding offline fallback untuk AI responses
+
+**Note**: Jika backend belum support `/ws/scan`, bisa fallback ke `/ws/voice` atau tetap pakai WebSocketManager sementara.

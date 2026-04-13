@@ -7,10 +7,7 @@ import com.anatomy.app.network.ChatWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.utils.TokenManager
-import com.anatomy.app.utils.WebSocketManager
-import com.anatomy.app.services.LLMService
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.delay
 
 class ChatRepository(
     private val context: Context
@@ -24,7 +21,7 @@ class ChatRepository(
     /**
      * Connect to chat WebSocket
      */
-    suspend fun connectChat(): Flow<ChatResponse>? {
+    fun connectChat(): Flow<ChatResponse>? {
         return try {
             val token = TokenManager.getAccessToken(context)
             if (token.isNullOrBlank()) {
@@ -32,18 +29,7 @@ class ChatRepository(
                 return null
             }
 
-            // Request exclusive access to WebSocket
-            val connectionGranted = WebSocketManager.requestConnection(
-                WebSocketManager.ConnectionType.CHATBOT, 
-                "ChatRepository"
-            )
-            
-            if (!connectionGranted) {
-                val (currentType, currentOwner) = WebSocketManager.getConnectionInfo()
-                Log.w(TAG, "WebSocket connection denied - currently used by $currentOwner for $currentType")
-                return null
-            }
-
+            // No more WebSocket conflicts - using dedicated /ws/chat endpoint
             // Ensure stale socket is closed before opening a new one
             disconnectChat()
             
@@ -109,11 +95,9 @@ class ChatRepository(
     /**
      * Disconnect from chat WebSocket
      */
-    suspend fun disconnectChat() {
+    fun disconnectChat() {
         try {
             chatWebSocket?.disconnect()
-            // Release WebSocket connection
-            WebSocketManager.releaseConnection("ChatRepository")
         } catch (e: Exception) {
             Log.e(TAG, "Error disconnecting chat websocket", e)
         }

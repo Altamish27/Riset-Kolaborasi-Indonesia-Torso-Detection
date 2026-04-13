@@ -2,11 +2,9 @@ package com.anatomy.app.services
 
 import android.content.Context
 import android.util.Log
-import com.anatomy.app.network.ChatWebSocketClient
-import com.anatomy.app.network.VoiceWebSocketClient
+import com.anatomy.app.network.ScanWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.utils.TokenManager
-import com.anatomy.app.utils.WebSocketManager
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.firstOrNull
@@ -32,7 +30,7 @@ class LLMService(private val context: Context) {
     
     private val TAG = "LLMService"
     private val httpClient = HttpClientFactory.createHttpClient()
-    private var scanWebSocket: ChatWebSocketClient? = null
+    private var scanWebSocket: ScanWebSocketClient? = null
     private var currentSessionId: String? = null
     
     companion object {
@@ -134,23 +132,13 @@ class LLMService(private val context: Context) {
                     return@withContext ""
                 }
                 
-                // Request exclusive access to WebSocket
-                val connectionGranted = WebSocketManager.requestConnection(
-                    WebSocketManager.ConnectionType.SCAN_AI, 
-                    "LLMService"
-                )
-                
-                if (!connectionGranted) {
-                    Log.e(TAG, "WebSocket connection denied - chatbot may be active")
-                    return@withContext ""
-                }
-                
-                // Mark service as active to prevent conflicts
+                // Mark service as active
                 isLLMServiceActive = true
                 
                 // Always create fresh WebSocket connection for LLM requests
+                // Using dedicated scan endpoint - no conflict with chatbot!
                 disconnect()
-                scanWebSocket = ChatWebSocketClient(httpClient)
+                scanWebSocket = ScanWebSocketClient(httpClient)
                 scanWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
                 
                 // Wait for authentication with shorter timeout
@@ -228,8 +216,7 @@ class LLMService(private val context: Context) {
             } finally {
                 // Always mark service as inactive when done
                 isLLMServiceActive = false
-                // Release WebSocket connection
-                WebSocketManager.releaseConnection("LLMService")
+                // No need to release connection - using dedicated endpoint
             }
         }
     }
