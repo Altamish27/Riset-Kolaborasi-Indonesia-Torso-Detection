@@ -425,16 +425,18 @@ fun QnaScreen(isActive: Boolean = true) {
         if (!isActive || !isAuthenticated || !isSessionCreating || !sessionId.isNullOrBlank()) return@LaunchedEffect
 
         if (sessionCreateAttempts >= 3 && reconnectCycles < 1) {
-            statusText = "Menyegarkan koneksi chat..."
-            reconnectCycles += 1
-            chatRepository.disconnectChat()
-            isAuthenticated = false
-            isSessionCreating = false
-            sessionId = null
-            lastSessionRequestAt = 0L
-            sessionCreateAttempts = 0
-            reconnectNonce += 1
-            return@LaunchedEffect
+                        statusText = "Menyegarkan koneksi chat..."
+                        reconnectCycles += 1
+                        coroutineScope.launch {
+                            chatRepository.disconnectChat()
+                        }
+                        isAuthenticated = false
+                        isSessionCreating = false
+                        sessionId = null
+                        lastSessionRequestAt = 0L
+                        sessionCreateAttempts = 0
+                        reconnectNonce += 1
+                        return@LaunchedEffect
         }
 
         if (sessionCreateAttempts >= 5) {
@@ -478,10 +480,12 @@ fun QnaScreen(isActive: Boolean = true) {
     DisposableEffect(isActive) {
         onDispose {
             if (!isActive) {
-                try {
-                    chatRepository.disconnectChat()
-                } catch (e: Exception) {
-                    Log.e("QnaScreen", "Error disconnecting chat on dispose", e)
+                coroutineScope.launch {
+                    try {
+                        chatRepository.disconnectChat()
+                    } catch (e: Exception) {
+                        Log.e("QnaScreen", "Error disconnecting chat on dispose", e)
+                    }
                 }
                 isAuthenticated = false
                 isSessionCreating = false
@@ -502,10 +506,12 @@ fun QnaScreen(isActive: Boolean = true) {
     // Full cleanup on composable dispose
     DisposableEffect(Unit) {
         onDispose {
-            try {
-                chatRepository.disconnectChat()
-            } catch (e: Exception) {
-                Log.e("QnaScreen", "Error disconnecting chat on full dispose", e)
+            coroutineScope.launch {
+                try {
+                    chatRepository.disconnectChat()
+                } catch (e: Exception) {
+                    Log.e("QnaScreen", "Error disconnecting chat on full dispose", e)
+                }
             }
             isAuthenticated = false
             isSessionCreating = false

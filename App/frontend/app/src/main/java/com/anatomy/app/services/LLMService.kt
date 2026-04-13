@@ -3,8 +3,10 @@ package com.anatomy.app.services
 import android.content.Context
 import android.util.Log
 import com.anatomy.app.network.ChatWebSocketClient
+import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.WebSocketManager
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.firstOrNull
@@ -30,8 +32,15 @@ class LLMService(private val context: Context) {
     
     private val TAG = "LLMService"
     private val httpClient = HttpClientFactory.createHttpClient()
-    private var chatWebSocket: ChatWebSocketClient? = null
+    private var scanWebSocket: ChatWebSocketClient? = null
     private var currentSessionId: String? = null
+    
+    companion object {
+        // Use a separate instance tracker to avoid conflicts with main chatbot
+        private var isLLMServiceActive = false
+        
+        fun isServiceActive(): Boolean = isLLMServiceActive
+    }
     
     /**
      * Get AI explanation for an organ from backend LLM via WebSocket.
@@ -125,14 +134,28 @@ class LLMService(private val context: Context) {
                     return@withContext ""
                 }
                 
+                // Request exclusive access to WebSocket
+                val connectionGranted = WebSocketManager.requestConnection(
+                    WebSocketManager.ConnectionType.SCAN_AI, 
+                    "LLMService"
+                )
+                
+                if (!connectionGranted) {
+                    Log.e(TAG, "WebSocket connection denied - chatbot may be active")
+                    return@withContext ""
+                }
+                
+                // Mark service as active to prevent conflicts
+                isLLMServiceActive = true
+                
                 // Always create fresh WebSocket connection for LLM requests
                 disconnect()
-                chatWebSocket = ChatWebSocketClient(httpClient)
-                chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
+                scanWebSocket = ChatWebSocketClient(httpClient)
+                scanWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
                 
                 // Wait for authentication with shorter timeout
                 val authResult = withTimeoutOrNull(10_000L) {
-                    chatWebSocket?.messages?.firstOrNull { msg ->
+                    scanWebSocket?.messages?.firstOrNull { msg ->
                         msg.action == "authenticated" || msg.error != null
                     }
                 }
@@ -164,7 +187,7 @@ class LLMService(private val context: Context) {
                     payload["session_id"] = sid
                 }
                 
-                val sendResult = chatWebSocket?.send(payload)
+                val sendResult = scanWebSocket?.send(payload)
                 if (sendResult != true) {
                     Log.e(TAG, "Failed to send prompt")
                     return@withContext ""
@@ -174,7 +197,7 @@ class LLMService(private val context: Context) {
                 
                 // Wait for response with reasonable timeout
                 val response = withTimeoutOrNull(25_000L) {
-                    chatWebSocket?.messages?.firstOrNull { chatResponse ->
+                    scanWebSocket?.messages?.firstOrNull { chatResponse ->
                         chatResponse.action == "chat_response" && !chatResponse.answer.isNullOrBlank()
                     }
                 }
@@ -202,6 +225,11 @@ class LLMService(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "Error in WebSocket request", e)
                 ""
+            } finally {
+                // Always mark service as inactive when done
+                isLLMServiceActive = false
+                // Release WebSocket connection
+                WebSocketManager.releaseConnection("LLMService")
             }
         }
     }
@@ -212,7 +240,7 @@ class LLMService(private val context: Context) {
     @OptIn(FlowPreview::class)
     private suspend fun setupSession(): Boolean {
         return try {
-            val sendResult = chatWebSocket?.send(mapOf("action" to "create_session"))
+            val sendResult = scanWebSocket?.send(mapOf("action" to "create_session"))
             if (sendResult != true) {
                 Log.e(TAG, "Failed to send create_session")
                 return false
@@ -220,7 +248,7 @@ class LLMService(private val context: Context) {
             
             // Wait for session_created response
             val sessionResponse = withTimeoutOrNull(8_000L) {
-                chatWebSocket?.messages?.firstOrNull { chatResponse ->
+                scanWebSocket?.messages?.firstOrNull { chatResponse ->
                     chatResponse.action == "session_created" && !chatResponse.session_id.isNullOrBlank()
                 }
             }
@@ -258,9 +286,10 @@ class LLMService(private val context: Context) {
      */
     fun disconnect() {
         try {
-            chatWebSocket?.disconnect()
-            chatWebSocket = null
+            scanWebSocket?.disconnect()
+            scanWebSocket = null
             currentSessionId = null
+            isLLMServiceActive = false
             Log.d(TAG, "Disconnected from LLM WebSocket")
         } catch (e: Exception) {
             Log.e(TAG, "Error disconnecting", e)

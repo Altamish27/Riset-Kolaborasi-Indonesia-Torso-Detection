@@ -7,7 +7,10 @@ import com.anatomy.app.network.ChatWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.WebSocketManager
+import com.anatomy.app.services.LLMService
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 
 class ChatRepository(
     private val context: Context
@@ -21,11 +24,22 @@ class ChatRepository(
     /**
      * Connect to chat WebSocket
      */
-    fun connectChat(): Flow<ChatResponse>? {
+    suspend fun connectChat(): Flow<ChatResponse>? {
         return try {
             val token = TokenManager.getAccessToken(context)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "No access token available for chat connection")
+                return null
+            }
+
+            // Request exclusive access to WebSocket
+            val connectionGranted = WebSocketManager.requestConnection(
+                WebSocketManager.ConnectionType.CHATBOT, 
+                "ChatRepository"
+            )
+            
+            if (!connectionGranted) {
+                Log.e(TAG, "WebSocket connection denied - scan AI may be active")
                 return null
             }
 
@@ -94,9 +108,11 @@ class ChatRepository(
     /**
      * Disconnect from chat WebSocket
      */
-    fun disconnectChat() {
+    suspend fun disconnectChat() {
         try {
             chatWebSocket?.disconnect()
+            // Release WebSocket connection
+            WebSocketManager.releaseConnection("ChatRepository")
         } catch (e: Exception) {
             Log.e(TAG, "Error disconnecting chat websocket", e)
         }

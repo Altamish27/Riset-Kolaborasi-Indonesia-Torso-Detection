@@ -1,13 +1,10 @@
 package com.anatomy.app.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -45,13 +38,10 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.anatomy.app.data.OrganEntity
 import com.anatomy.app.helper.AudioAssistant
-import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.services.LLMService
-import com.anatomy.app.ui.theme.BoundingBoxColor
+import com.anatomy.app.utils.WebSocketManager
 import com.anatomy.app.ui.theme.NeonAmber
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
@@ -59,183 +49,305 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
+import android.util.Log
 
-/**
- * Page 1 — "Mode Scan Anatomi"
- *
- * Full-screen CameraX preview with:
- *   - ScanOverlay (scanning wave + bounding box from TFLite or mock)
- *   - TFLite real object detection with mock fallback
- *   - 1.5s detection hold → TTS prompt → voice confirmation
- *   - On "Ya" → Request LLM explanation → Popup slides up + TTS plays explanation
- *   - "Baca Penjelasan" manual button in text-only mode
- *
- * @param isActive Whether this page is currently visible/settled.
- */
 @Composable
 fun ScanAnatomyScreen(isActive: Boolean = true) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    
-    // LLM Service for getting organ explanations from backend
+    val scope = rememberCoroutineScope()
     val llmService = remember { LLMService(context) }
-
-    // Detection state
-    var currentDetection by remember { mutableStateOf<DetectionResult?>(null) }
-    var confirmedOrgan by remember { mutableStateOf<String?>(null) }
-    var isWaitingConfirmation by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Arahkan kamera ke objek") }
-    var isLoadingExplanation by remember { mutableStateOf(false) }
-    var debugLogs by remember { mutableStateOf(listOf<String>()) }
-
-    // Popup state
-    var showPopup by remember { mutableStateOf(false) }
-    var popupExplanation by remember { mutableStateOf("") }
-    var popupLabel by remember { mutableStateOf("") }
-
-    // Manual read button state
-    var showReadButton by remember { mutableStateOf(false) }
-
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
 
-    fun appendDebugLog(message: String) {
-        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        debugLogs = (listOf("[$stamp] $message") + debugLogs).take(8)
+    var currentDetection by remember { mutableStateOf<DetectionResult?>(null) }
+    var statusText by remember { mutableStateOf("Ucapkan mulai belajar untuk memulai") }
+    var detectionThreshold by remember { mutableStateOf(0.25f) }
+    var isLearningActive by remember { mutableStateOf(false) }
+    var lockedOrgan by remember { mutableStateOf<String?>(null) }
+    var isAiBusy by remember { mutableStateOf(false) }
+    var isVoiceListening by remember { mutableStateOf(false) }
+    var currentMode by remember { mutableStateOf("standby") }
+    var startCommandRetry by remember { mutableStateOf(0) }
+    var isPageActive by remember { mutableStateOf(isActive) }
+    var sessionToken by remember { mutableStateOf(0) }
+
+    fun speak(text: String) {
+        if (!AudioAssistant.isVoiceOn) return
+        AudioAssistant.speak(text)
     }
 
-    // TFLite analyzer
-    val analyzer = remember {
-        TFLiteObjectAnalyzer(
-            context = context,
-            onDetection = { detection ->
-                if (!isWaitingConfirmation && confirmedOrgan == null && !showPopup) {
-                    currentDetection = detection
+    fun startLockedLoop() {
+        val localSession = sessionToken
+        val organ = lockedOrgan
+        if (!isPageActive || organ.isNullOrBlank() || isVoiceListening) return
+
+        isVoiceListening = true
+        statusText = "Organ $organ terkunci. Silakan bertanya atau ucapkan lanjut organ lain."
+
+        voiceHelper.startListening(
+            onResult = { spoken ->
+                if (!isPageActive || localSession != sessionToken) {
+                    isVoiceListening = false
+                    return@startListening
+                }
+                isVoiceListening = false
+                if (!isPageActive) return@startListening
+
+                val currentOrgan = lockedOrgan
+                if (currentOrgan.isNullOrBlank()) return@startListening
+                val norm = spoken.lowercase(Locale.US).trim()
+
+                if (norm.contains("lanjut organ lain")) {
+                    statusText = "Baik, lanjut ke organ berikutnya."
+                    speak("Baik, lanjut organ lain.")
+                    lockedOrgan = null
+                    currentDetection = null
+                    currentMode = "detecting"
+                    return@startListening
+                }
+
+                if (spoken.isBlank()) {
+                    statusText = "Tidak terdengar. Ulangi pertanyaan atau ucapkan lanjut organ lain."
+                    scope.launch {
+                        delay(500L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        startLockedLoop()
+                    }
+                    return@startListening
+                }
+
+                isAiBusy = true
+                statusText = "Meminta jawaban AI tentang $currentOrgan..."
+                scope.launch {
+                    try {
+                        val answer = withContext(Dispatchers.IO) {
+                            llmService.askQuestionAboutOrgan(currentOrgan, spoken)
+                        }
+                        isAiBusy = false
+                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
+                        
+                        if (answer.isBlank() || answer.contains("Maaf", ignoreCase = true) || 
+                            answer.contains("tidak dapat", ignoreCase = true)) {
+                            statusText = "AI tidak bisa menjawab. Coba pertanyaan lain atau lanjut organ lain."
+                            speak("Maaf, saya tidak bisa menjawab itu. Tanya yang lain atau lanjut organ lain.")
+                        } else {
+                            statusText = "Silakan tanya lagi atau ucapkan lanjut organ lain."
+                            speak(answer)
+                        }
+                        delay(1200L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        startLockedLoop()
+                    } catch (e: Exception) {
+                        Log.e("ScanAnatomyScreen", "Error getting AI answer", e)
+                        isAiBusy = false
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        statusText = "Error AI: Coba lagi atau lanjut organ lain."
+                        speak("Ada gangguan AI. Coba lagi atau lanjut organ lain.")
+                        delay(1200L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        startLockedLoop()
+                    }
                 }
             },
-            onDebugLog = { message ->
-                coroutineScope.launch {
-                    appendDebugLog(message)
+            onError = {
+                if (!isPageActive || localSession != sessionToken) {
+                    isVoiceListening = false
+                    return@startListening
+                }
+                isVoiceListening = false
+                if (!isPageActive) return@startListening
+                statusText = "Gagal mendengar. Ucapkan lagi atau lanjut organ lain."
+                scope.launch {
+                    delay(600L)
+                    if (!isPageActive || localSession != sessionToken) return@launch
+                    startLockedLoop()
                 }
             }
         )
     }
 
-    // 1.5s hold timer for confirmed detection
-    LaunchedEffect(currentDetection) {
-        if (currentDetection != null && !isWaitingConfirmation && isActive && !showPopup) {
-            delay(1500L)
-            if (currentDetection != null && !isWaitingConfirmation && !showPopup) {
-                val organ = currentDetection!!.organName
-                val label = currentDetection!!.mockLabel
-                isWaitingConfirmation = true
-                statusText = "Terdeteksi: $organ"
-                HapticHelper.doubleBuzz()
+    fun startLearningCommandLoop() {
+        val localSession = sessionToken
+        if (!isPageActive || isLearningActive || isAiBusy || isVoiceListening || lockedOrgan != null) return
 
-                if (AudioAssistant.isVoiceOn) {
-                    AudioAssistant.speak("Terdeteksi $organ. Mau dengar penjelasan lanjut?")
+        isVoiceListening = true
+        statusText = "Menunggu perintah suara: mulai belajar"
 
-                    AudioAssistant.onUtteranceCompleted = {
-                        voiceHelper.startListening(
-                            onResult = { result ->
-                                val normalized = result.lowercase().trim()
-                                if (normalized.contains("ya") || normalized.contains("mau") ||
-                                    normalized.contains("iya") || normalized.contains("oke")
-                                ) {
-                                    // User confirmed - request LLM explanation
-                                    confirmedOrgan = organ
-                                    HapticHelper.shortBuzz()
-                                    isLoadingExplanation = true
-                                    statusText = "Meminta penjelasan dari AI..."
-                                    popupLabel = label
-                                    
-                                    coroutineScope.launch {
-                                        // Fetch explanation from LLM backend
-                                        val explanation = withContext(Dispatchers.IO) {
-                                            llmService.getExplanationText(organ)
-                                        }
-                                        
-                                        isLoadingExplanation = false
-                                        
-                                        if (explanation.isNotEmpty()) {
-                                            // Show popup with LLM explanation
-                                            popupExplanation = explanation
-                                            showPopup = true
-                                            statusText = "Menjelaskan: $organ"
-                                            
-                                            // Play explanation via TTS
-                                            AudioAssistant.speak(explanation)
-                                            AudioAssistant.onUtteranceCompleted = {
-                                                // Let user dismiss via swipe
-                                            }
-                                        } else {
-                                            AudioAssistant.speak("Maaf, tidak dapat mendapatkan penjelasan untuk $organ saat ini.")
-                                            resetScanState(
-                                                { isWaitingConfirmation = false },
-                                                { confirmedOrgan = null },
-                                                { currentDetection = null },
-                                                { showReadButton = false },
-                                                { statusText = "Arahkan kamera ke objek" }
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    AudioAssistant.speak("Baik, scan dilanjutkan.")
-                                    resetScanState(
-                                        { isWaitingConfirmation = false },
-                                        { confirmedOrgan = null },
-                                        { currentDetection = null },
-                                        { showReadButton = false },
-                                        { statusText = "Arahkan kamera ke objek" }
-                                    )
-                                }
-                            },
-                            onError = { _ ->
-                                AudioAssistant.speak("Maaf, tidak dapat mendengar. Scan dilanjutkan.")
-                                resetScanState(
-                                    { isWaitingConfirmation = false },
-                                    { confirmedOrgan = null },
-                                    { currentDetection = null },
-                                    { showReadButton = false },
-                                    { statusText = "Arahkan kamera ke objek" }
-                                )
-                            }
-                        )
-                    }
+        voiceHelper.startListening(
+            onResult = { spoken ->
+                if (!isPageActive || localSession != sessionToken) {
+                    isVoiceListening = false
+                    return@startListening
+                }
+                isVoiceListening = false
+                if (!isPageActive) return@startListening
+
+                val norm = spoken.lowercase(Locale.US).trim()
+                if (norm.contains("mulai belajar")) {
+                    startCommandRetry = 0
+                    isLearningActive = true
+                    currentMode = "detecting"
+                    statusText = "Mode belajar aktif. Arahkan kamera ke organ."
+                    speak("Mode belajar dimulai. Arahkan kamera ke organ.")
+                    return@startListening
+                }
+
+                startCommandRetry += 1
+                if (startCommandRetry >= 3) {
+                    startCommandRetry = 0
+                    isLearningActive = true
+                    currentMode = "detecting"
+                    statusText = "Mode belajar aktif. Arahkan kamera ke organ."
+                    speak("Saya mulai mode belajar otomatis.")
                 } else {
-                    // Text-only / silent mode → show manual "Read" button
-                    showReadButton = true
-                    confirmedOrgan = organ
-                    popupLabel = label
+                    statusText = "Perintah belum dikenali. Ucapkan mulai belajar."
+                    scope.launch {
+                        delay(500L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        startLearningCommandLoop()
+                    }
+                }
+            },
+            onError = {
+                if (!isPageActive || localSession != sessionToken) {
+                    isVoiceListening = false
+                    return@startListening
+                }
+                isVoiceListening = false
+                if (!isPageActive) return@startListening
+
+                startCommandRetry += 1
+                if (startCommandRetry >= 3) {
+                    startCommandRetry = 0
+                    isLearningActive = true
+                    currentMode = "detecting"
+                    statusText = "Mode belajar aktif. Arahkan kamera ke organ."
+                    speak("Saya mulai mode belajar otomatis.")
+                } else {
+                    statusText = "Gagal mendengar. Ucapkan mulai belajar."
+                    scope.launch {
+                        delay(700L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        startLearningCommandLoop()
+                    }
                 }
             }
+        )
+    }
+
+    val analyzer = remember {
+        TFLiteObjectAnalyzer(
+            context = context,
+            onDetection = { detection ->
+                scope.launch {
+                    val localSession = sessionToken
+                    if (!isPageActive || !isLearningActive || lockedOrgan != null || isAiBusy) return@launch
+
+                    currentDetection = detection
+                    if (detection == null) {
+                        statusText = "Mencari organ..."
+                        return@launch
+                    }
+
+                    val organ = detection.organName
+                    lockedOrgan = organ
+                    currentMode = "locked"
+                    isAiBusy = true
+                    statusText = "Organ terkunci: $organ. Meminta penjelasan AI..."
+
+                    try {
+                        val explanation = withContext(Dispatchers.IO) {
+                            llmService.getExplanationText(organ)
+                        }
+                        isAiBusy = false
+                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
+
+                        if (explanation.isBlank() || explanation.contains("Maaf", ignoreCase = true) || 
+                            explanation.contains("tidak dapat", ignoreCase = true)) {
+                            statusText = "Tidak ada penjelasan untuk $organ. Deteksi organ lain."
+                            speak("Tidak ada penjelasan. Silakan sorot organ lain.")
+                            // Auto-unlock after failed explanation
+                            delay(3000L)
+                            if (!isPageActive || localSession != sessionToken) return@launch
+                            lockedOrgan = null
+                            currentDetection = null
+                            currentMode = "detecting"
+                            statusText = "Mencari organ..."
+                        } else {
+                            statusText = "Organ $organ terkunci. Dengarkan penjelasan."
+                            speak(explanation)
+                            delay(1200L)
+                            if (!isPageActive || localSession != sessionToken) return@launch
+                            startLockedLoop()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ScanAnatomyScreen", "Error getting AI explanation", e)
+                        isAiBusy = false
+                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
+                        statusText = "Error AI. Deteksi organ lain atau coba lagi."
+                        speak("Ada gangguan AI. Silakan coba organ lain.")
+                        // Auto-unlock after error
+                        delay(3000L)
+                        if (!isPageActive || localSession != sessionToken) return@launch
+                        lockedOrgan = null
+                        currentDetection = null
+                        currentMode = "detecting"
+                        statusText = "Mencari organ..."
+                    }
+                }
+            },
+            onDebugLog = {},
+            initialConfidenceThreshold = detectionThreshold
+        )
+    }
+
+    LaunchedEffect(detectionThreshold) {
+        analyzer.updateConfidenceThreshold(detectionThreshold)
+    }
+
+    LaunchedEffect(isActive) {
+        isPageActive = isActive
+        if (!isActive) {
+            sessionToken += 1
+            voiceHelper.stopListening()
+            isVoiceListening = false
+            isAiBusy = false
+            // Give time for any pending AI requests to complete before disconnecting
+            delay(1000L)
+            llmService.disconnect()
+            currentMode = "standby"
+            return@LaunchedEffect
+        }
+
+        if (!AudioAssistant.isVoiceOn) {
+            AudioAssistant.cycleMode()
+        }
+        speak("Mode scan siap. Ucapkan mulai belajar untuk memulai.")
+        delay(1000L)
+        if (!isLearningActive && lockedOrgan == null) {
+            startLearningCommandLoop()
         }
     }
 
-    // 10-second no-detection fallback
-    LaunchedEffect(isActive, currentDetection) {
-        if (isActive && currentDetection == null && !isWaitingConfirmation && !showPopup) {
-            delay(10_000L)
-            // After 10s, if still no detection, give guidance
-            if (currentDetection == null && !isWaitingConfirmation && !showPopup && isActive) {
-                AudioAssistant.speak("Coba dekatkan atau gerakkan kamera sedikit.")
-                HapticHelper.shortBuzz()
-            }
+    LaunchedEffect(isActive, isLearningActive, lockedOrgan, isAiBusy, isVoiceListening) {
+        if (!isPageActive) return@LaunchedEffect
+        if (!isLearningActive && lockedOrgan == null && !isAiBusy && !isVoiceListening) {
+            startLearningCommandLoop()
         }
     }
 
-    // Cleanup
     DisposableEffect(Unit) {
         onDispose {
             voiceHelper.destroy()
+            llmService.disconnect()
             analyzer.close()
-            AudioAssistant.onUtteranceCompleted = null
+            // Force release WebSocket connection on dispose
+            scope.launch {
+                WebSocketManager.forceRelease()
+            }
         }
     }
 
-    // Pulsing glow for status badge
     val infiniteTransition = rememberInfiniteTransition(label = "status_glow")
     val statusGlow by infiniteTransition.animateFloat(
         initialValue = 0.6f,
@@ -253,21 +365,18 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             .background(MaterialTheme.colorScheme.background)
             .semantics { contentDescription = "Halaman Mode Scan Anatomi" }
     ) {
-        // Layer 1: Camera preview
         CameraPreview(
             isActive = isActive,
             analyzer = analyzer,
             modifier = Modifier.fillMaxSize()
         )
 
-        // Layer 2: Scan overlay
         ScanOverlay(
-            isScanning = isActive && !isWaitingConfirmation && !showPopup,
+            isScanning = isActive && isLearningActive && lockedOrgan == null,
             detection = currentDetection,
             modifier = Modifier.fillMaxSize()
         )
 
-        // Layer 3: Top status bar
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -280,7 +389,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         )
                     )
                 )
-                .padding(top = 48.dp, bottom = 24.dp, start = 20.dp, end = 20.dp)
+                .padding(top = 48.dp, bottom = 16.dp, start = 20.dp, end = 20.dp)
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -297,13 +406,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            when {
-                                confirmedOrgan != null -> NeonGreen.copy(alpha = 0.2f)
-                                isWaitingConfirmation -> NeonAmber.copy(alpha = 0.2f)
-                                else -> NeonCyan.copy(alpha = 0.15f * statusGlow)
-                            }
-                        )
+                        .background(NeonCyan.copy(alpha = 0.15f * statusGlow))
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -311,162 +414,38 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         modifier = Modifier
                             .size(8.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                when {
-                                    confirmedOrgan != null -> NeonGreen
-                                    isWaitingConfirmation -> NeonAmber
-                                    else -> NeonCyan
-                                }
-                            )
+                            .background(if (currentDetection != null) NeonGreen else NeonAmber)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-
-                    val confidenceText = if (currentDetection?.confidence ?: -1f > 0f) {
-                        " (${(currentDetection!!.confidence * 100).toInt()}%)"
-                    } else ""
-
                     Text(
-                        text = statusText + confidenceText,
+                        text = statusText,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = when {
-                            confirmedOrgan != null -> NeonGreen
-                            isWaitingConfirmation -> NeonAmber
-                            else -> NeonCyan
-                        },
+                        color = if (currentDetection != null) NeonGreen else NeonAmber,
                         modifier = Modifier.semantics { contentDescription = statusText }
                     )
                 }
-            }
-        }
 
-        // Layer 4: Manual "Baca Penjelasan" button
-        // NOTE: Detection label with accuracy % is now rendered by ScanOverlay directly
-        AnimatedVisibility(
-            visible = showReadButton && !showPopup,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp)
-        ) {
-            Button(
-                onClick = {
-                    showReadButton = false
-                    val organ = confirmedOrgan
-                    if (organ != null) {
-                        // Request LLM explanation for manual read button
-                        isLoadingExplanation = true
-                        statusText = "Meminta penjelasan dari AI..."
-                        
-                        coroutineScope.launch {
-                            val explanation = withContext(Dispatchers.IO) {
-                                llmService.getExplanationText(organ)
-                            }
-                            
-                            isLoadingExplanation = false
-                            
-                            if (explanation.isNotEmpty()) {
-                                popupExplanation = explanation
-                                showPopup = true
-                                statusText = "Menjelaskan: $organ"
-                                
-                                // Play explanation via TTS
-    if (AudioAssistant.isVoiceOn) {
-                                    AudioAssistant.speak(explanation)
-                                }
-                            } else {
-                                AudioAssistant.speak("Maaf, tidak dapat mendapatkan penjelasan untuk $organ saat ini.")
-                                resetScanState(
-                                    { isWaitingConfirmation = false },
-                                    { confirmedOrgan = null },
-                                    { currentDetection = null },
-                                    { showReadButton = false },
-                                    { statusText = "Arahkan kamera ke objek" }
-                                )
-                            }
-                        }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NeonCyan.copy(alpha = 0.9f),
-                    contentColor = MaterialTheme.colorScheme.background
-                ),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .padding(horizontal = 32.dp)
-                    .height(52.dp)
-                    .semantics {
-                        contentDescription = "Baca penjelasan tentang ${confirmedOrgan}"
-                    }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoStories,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Baca Penjelasan",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    text = "Mode: $currentMode",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NeonCyan
                 )
-            }
-        }
 
-        // Layer 5: Runtime debug panel
-        if (debugLogs.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.72f))
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
-            ) {
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Debug CV",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "Threshold deteksi: ${(detectionThreshold * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
                     color = NeonAmber,
                     fontWeight = FontWeight.Bold
                 )
-                debugLogs.forEach { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeonCyan,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp
-                    )
-                }
+                Slider(
+                    value = detectionThreshold,
+                    onValueChange = { detectionThreshold = it },
+                    valueRange = 0.05f..0.95f,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
-
-        // Layer 6: LLM Explanation Popup
-        if (showPopup && popupExplanation.isNotEmpty() && confirmedOrgan != null) {
-            LLMExplanationPopupSheet(
-                organName = confirmedOrgan!!,
-                explanation = popupExplanation,
-                onDismiss = {
-                    showPopup = false
-                    AudioAssistant.stop()
-                    AudioAssistant.onUtteranceCompleted = null
-                    resetScanState(
-                        { isWaitingConfirmation = false },
-                        { confirmedOrgan = null },
-                        { currentDetection = null },
-                        { showReadButton = false },
-                        { statusText = "Arahkan kamera ke objek" },
-                        { popupExplanation = "" },
-                        { popupLabel = "" }
-                    )
-                }
-            )
-        }
     }
-}
-
-private fun resetScanState(vararg resets: () -> Unit) {
-    resets.forEach { it() }
 }

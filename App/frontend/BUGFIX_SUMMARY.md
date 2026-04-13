@@ -109,9 +109,35 @@
 3. Authentication token harus valid untuk WebSocket connection
 4. Pastikan model TFLite sudah ada di assets folder
 
+## Update: WebSocket Conflict Resolution ✅
+
+### Additional Issue Found & Fixed
+**Masalah**: Force close terjadi ketika pindah dari scan ke chatbot karena konflik WebSocket
+**Penyebab**: 
+- Scan AI dan Chatbot menggunakan endpoint WebSocket yang sama (`/ws/chat`)
+- Race condition saat kedua fitur mencoba connect bersamaan
+- Tidak ada koordinasi antara LLMService dan ChatRepository
+
+**Solusi**:
+- Membuat `WebSocketManager` untuk mengelola akses eksklusif ke WebSocket
+- LLMService menggunakan connection type `SCAN_AI`
+- ChatRepository menggunakan connection type `CHATBOT`  
+- Mutex-based locking untuk mencegah konflik
+- Proper cleanup dan release connection
+
+### New Files Added
+- `WebSocketManager.kt` - Manages exclusive WebSocket access
+
+### Additional Changes
+- `LLMService.kt` - Request/release connection via WebSocketManager
+- `ChatRepository.kt` - Request/release connection via WebSocketManager
+- `QnaScreen.kt` - Proper async disconnect handling
+- `ScanAnatomyScreen.kt` - Force release connection on dispose
+
 ## Next Steps
 
 1. Test aplikasi secara menyeluruh
-2. Monitor logs untuk error yang mungkin masih ada
-3. Optimasi performance jika diperlukan
-4. Consider adding offline fallback untuk AI responses
+2. Test transisi dari scan ke chatbot dan sebaliknya
+3. Monitor logs untuk error yang mungkin masih ada
+4. Optimasi performance jika diperlukan
+5. Consider adding offline fallback untuk AI responses
