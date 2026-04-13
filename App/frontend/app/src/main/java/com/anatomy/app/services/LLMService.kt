@@ -5,6 +5,7 @@ import android.util.Log
 import com.anatomy.app.network.ScanWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.firstOrNull
@@ -41,7 +42,7 @@ class LLMService(private val context: Context) {
     }
     
     /**
-     * Get AI explanation for an organ from backend LLM via WebSocket.
+     * Get AI explanation for an organ from backend LLM via unified WebSocket.
      *
      * @param organName The name of the organ (e.g., "Jantung", "Paru-paru")
      * @return Explanation text from AI, or error message if request fails
@@ -57,10 +58,10 @@ class LLMService(private val context: Context) {
             val prompt = "Jelaskan organ $organName secara singkat, maksimal 3-4 kalimat. " +
                     "Fokus pada fungsi utama organ ini dalam bahasa Indonesia yang mudah dipahami."
             
-            Log.d(TAG, "Requesting LLM explanation for: $organName")
+            Log.d(TAG, "Requesting LLM explanation for: $organName via unified WebSocket")
             
-            // Connect and get explanation via WebSocket
-            val explanation = requestViaWebSocket(prompt)
+            // Use unified WebSocket - no need for separate connection!
+            val explanation = requestViaUnifiedWebSocket(organName, prompt)
             
             if (explanation.isBlank()) {
                 Log.e(TAG, "Empty explanation received for $organName")
@@ -76,14 +77,11 @@ class LLMService(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting LLM explanation for $organName", e)
             "Maaf, tidak dapat mendapatkan penjelasan saat ini."
-        } finally {
-            // Important: release /ws/chat so other features (QnA page) can connect reliably.
-            disconnect()
         }
     }
 
     /**
-     * Ask a follow-up question about a specific organ in the same chat channel.
+     * Ask a follow-up question about a specific organ via unified WebSocket.
      */
     suspend fun askQuestionAboutOrgan(organName: String, question: String): String {
         if (!isValidOrganName(organName)) {
@@ -97,7 +95,7 @@ class LLMService(private val context: Context) {
             val prompt = "Konteks organ: $organName. " +
                 "Jawab pertanyaan berikut secara singkat dan jelas dalam bahasa Indonesia: $question"
 
-            val answer = requestViaWebSocket(prompt)
+            val answer = requestViaUnifiedWebSocket(organName, prompt)
             if (answer.isBlank()) {
                 "Maaf, saya belum bisa menjawab pertanyaan itu saat ini."
             } else {
@@ -109,9 +107,6 @@ class LLMService(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error follow-up question for $organName", e)
             "Maaf, terjadi gangguan saat memproses pertanyaan lanjutan."
-        } finally {
-            // Keep scan LLM channel isolated to avoid interfering with dedicated chat mode.
-            disconnect()
         }
     }
     
@@ -222,6 +217,61 @@ class LLMService(private val context: Context) {
     }
     
     /**
+     * Send request via unified WebSocket (new approach)
+     */
+    @OptIn(FlowPreview::class)
+    private suspend fun requestViaUnifiedWebSocket(organ: String, prompt: String): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (!UnifiedWebSocketManager.isConnected()) {
+                    Log.e(TAG, "Unified WebSocket not connected")
+                    return@withContext ""
+                }
+                
+                // Send scan request via unified WebSocket
+                val sent = UnifiedWebSocketManager.sendScanRequest(organ, prompt)
+                if (!sent) {
+                    Log.e(TAG, "Failed to send scan request")
+                    return@withContext ""
+                }
+                
+                Log.d(TAG, "Scan request sent via unified WebSocket, waiting for response...")
+                
+                // Wait for response with timeout
+                val response = withTimeoutOrNull(25_000L) {
+                    UnifiedWebSocketManager.getMessages()?.firstOrNull { chatResponse ->
+                        chatResponse.action == "chat_response" && !chatResponse.answer.isNullOrBlank()
+                    }
+                }
+                
+                if (response == null) {
+                    Log.e(TAG, "No response received within timeout")
+                    return@withContext ""
+                }
+
+                val answer = response.answer?.takeIf { it.isNotBlank() }
+                    ?: response.assistant_message
+                        ?.jsonObject
+                        ?.get("content")
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.trim()
+                        .orEmpty()
+                
+                Log.d(TAG, "Received answer via unified WebSocket: ${answer.take(100)}...")
+                return@withContext answer
+                
+            } catch (e: TimeoutCancellationException) {
+                Log.e(TAG, "Timeout in unified WebSocket request", e)
+                ""
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in unified WebSocket request", e)
+                ""
+            }
+        }
+    }
+    
+    /**
      * Setup a new chat session via WebSocket.
      */
     @OptIn(FlowPreview::class)
@@ -269,15 +319,16 @@ class LLMService(private val context: Context) {
     }
     
     /**
-     * Disconnect from WebSocket (optional cleanup).
+     * Disconnect from WebSocket (now managed globally)
      */
     fun disconnect() {
         try {
+            // Old separate connection cleanup (keep for backward compatibility)
             scanWebSocket?.disconnect()
             scanWebSocket = null
             currentSessionId = null
             isLLMServiceActive = false
-            Log.d(TAG, "Disconnected from LLM WebSocket")
+            Log.d(TAG, "LLM service cleanup completed")
         } catch (e: Exception) {
             Log.e(TAG, "Error disconnecting", e)
         }

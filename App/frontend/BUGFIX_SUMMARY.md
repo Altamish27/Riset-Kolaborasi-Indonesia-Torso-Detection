@@ -204,4 +204,48 @@ Backend perlu support endpoint `/ws/scan` yang sama functionality dengan `/ws/ch
 5. Performance testing dengan multiple connections
 6. Consider adding offline fallback untuk AI responses
 
-**Note**: Jika backend belum support `/ws/scan`, bisa fallback ke `/ws/voice` atau tetap pakai WebSocketManager sementara.
+## Alternative Solution: Unified WebSocket with Message Routing ✅
+
+### User's Brilliant Idea: Single Persistent Connection
+
+**Concept**: Connect once on login, route messages by type
+```kotlin
+// Login → Connect to 1 WebSocket
+ws://43.157.235.115:8000/ws/chat
+
+// Route messages by type
+{
+  "type": "chat",
+  "action": "send_message",
+  "content": "Hello"
+}
+
+{
+  "type": "scan", 
+  "action": "get_explanation",
+  "organ": "jantung",
+  "prompt": "Jelaskan fungsi jantung"
+}
+```
+
+### Benefits of Unified Approach:
+✅ **Single connection** - hemat resource & battery
+✅ **No reconnect** saat ganti fitur - instant switching
+✅ **Persistent connection** - better performance
+✅ **Simpler architecture** - 1 WebSocket manager
+✅ **No backend changes** needed - use existing `/ws/chat`
+
+### Implementation:
+- `UnifiedWebSocketClient` - single WebSocket with message routing
+- `UnifiedWebSocketManager` - global connection manager
+- Connect on login, disconnect on logout/app destroy
+- ChatRepository & LLMService use same connection
+- Message routing by "type" field
+
+### Usage Flow:
+1. Login → Connect to unified WebSocket
+2. Scan organ → Send `{"type": "scan", ...}`
+3. Switch to chatbot → Send `{"type": "chat", ...}`
+4. No reconnection needed! 🎉
+
+**Note**: Jika backend belum support message routing, bisa fallback ke separate endpoints atau WebSocketManager sementara.

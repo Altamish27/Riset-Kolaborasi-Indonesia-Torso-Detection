@@ -7,6 +7,7 @@ import com.anatomy.app.network.ChatWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.flow.Flow
 
 class ChatRepository(
@@ -19,31 +20,32 @@ class ChatRepository(
     private val httpClient = HttpClientFactory.createHttpClient()
     
     /**
-     * Connect to chat WebSocket
+     * Connect to chat WebSocket (now uses unified connection)
      */
     fun connectChat(): Flow<ChatResponse>? {
         return try {
+            if (UnifiedWebSocketManager.isConnected()) {
+                Log.d(TAG, "Using existing unified WebSocket connection")
+                return UnifiedWebSocketManager.getMessages()
+            }
+            
             val token = TokenManager.getAccessToken(context)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "No access token available for chat connection")
                 return null
             }
 
-            // No more WebSocket conflicts - using dedicated /ws/chat endpoint
-            // Ensure stale socket is closed before opening a new one
-            disconnectChat()
-            
-            chatWebSocket = ChatWebSocketClient(httpClient)
-            chatWebSocket?.connect(HttpClientFactory.getBaseUrl(context), token)
-            chatWebSocket?.messages
+            // Connect to unified WebSocket
+            Log.d(TAG, "Connecting to unified WebSocket for chat")
+            UnifiedWebSocketManager.connect(context, token)
         } catch (e: Exception) {
-            Log.e(TAG, "Error connecting to chat WebSocket", e)
+            Log.e(TAG, "Error connecting to unified WebSocket", e)
             null
         }
     }
     
     /**
-     * Send a chat message
+     * Send a chat message (now uses unified connection)
      */
     fun sendChatMessage(sessionId: String?, content: String): Boolean {
         return try {
@@ -52,16 +54,7 @@ class ChatRepository(
                 return false
             }
             
-            val message = mutableMapOf<String, String>(
-                "action" to "send_message",
-                "content" to content
-            )
-            
-            if (sessionId != null) {
-                message["session_id"] = sessionId
-            }
-            
-            chatWebSocket?.send(message) == true
+            UnifiedWebSocketManager.sendChatMessage(sessionId, content)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending chat message", e)
             false
@@ -69,17 +62,17 @@ class ChatRepository(
     }
     
     /**
-     * Create a new chat session
+     * Create a new chat session (now uses unified connection)
      */
     fun createSession(): Boolean {
-        return chatWebSocket?.send(mapOf("action" to "create_session")) == true
+        return UnifiedWebSocketManager.createSession()
     }
     
     /**
-     * List all sessions
+     * List all sessions (now uses unified connection)
      */
     fun listSessions(): Boolean {
-        return chatWebSocket?.send(mapOf("action" to "list_sessions")) == true
+        return UnifiedWebSocketManager.listSessions()
     }
     
     /**
@@ -93,15 +86,12 @@ class ChatRepository(
     }
     
     /**
-     * Disconnect from chat WebSocket
+     * Disconnect from chat WebSocket (now managed globally)
      */
     fun disconnectChat() {
-        try {
-            chatWebSocket?.disconnect()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error disconnecting chat websocket", e)
-        }
-        chatWebSocket = null
+        // Note: Don't disconnect unified WebSocket here as it's shared
+        // It will be disconnected on app destroy or logout
+        Log.d(TAG, "Chat disconnect requested - unified connection remains active")
     }
     
     /**

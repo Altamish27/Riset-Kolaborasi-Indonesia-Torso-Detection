@@ -3,6 +3,7 @@ package com.anatomy.app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,8 @@ import com.anatomy.app.ui.screen.LoginScreen
 import com.anatomy.app.ui.screen.MainPagerScreen
 import com.anatomy.app.ui.theme.AnatomyAppTheme
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.UnifiedWebSocketManager
+import androidx.compose.runtime.LaunchedEffect
 
 /**
  * MainActivity — Single activity entry point.
@@ -38,10 +41,16 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (!allGranted) {
-            AudioAssistant.speak(
-                "Beberapa izin belum diberikan. " +
-                        "Aplikasi membutuhkan izin kamera dan mikrofon untuk berfungsi dengan baik."
-            )
+            try {
+                if (AudioAssistant.isEnabled) {
+                    AudioAssistant.speak(
+                        "Beberapa izin belum diberikan. " +
+                                "Aplikasi membutuhkan izin kamera dan mikrofon untuk berfungsi dengan baik."
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error speaking permission message", e)
+            }
         }
     }
 
@@ -66,6 +75,14 @@ class MainActivity : ComponentActivity() {
                             loginState.value = false
                         })
                     } else {
+                        // Connect to unified WebSocket when logged in
+                        LaunchedEffect(Unit) {
+                            val token = TokenManager.getAccessToken(this@MainActivity)
+                            if (!token.isNullOrBlank()) {
+                                UnifiedWebSocketManager.connect(this@MainActivity, token)
+                            }
+                        }
+                        
                         MainPagerScreen()
                     }
                 }
@@ -86,5 +103,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         AudioAssistant.shutdown()
+        UnifiedWebSocketManager.disconnect()
     }
 }
