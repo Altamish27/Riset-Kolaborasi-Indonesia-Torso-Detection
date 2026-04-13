@@ -134,10 +134,39 @@
 - `QnaScreen.kt` - Proper async disconnect handling
 - `ScanAnatomyScreen.kt` - Force release connection on dispose
 
+## Update: Chatbot "Stuck Menghubungkan" Fixed ✅
+
+### Issue: Chatbot Stuck di "Menghubungkan ke backend..."
+**Penyebab**: 
+- WebSocket connection timeout tidak ditangani dengan baik
+- Tidak ada retry mechanism yang proper
+- WebSocketManager conflict tidak memberikan feedback yang jelas
+- Tidak ada timeout untuk connection establishment
+
+**Solusi**:
+- Tambah timeout 30 detik untuk WebSocket connection
+- Auto-retry mechanism dengan backoff (3x attempts)
+- Better error messages untuk WebSocket conflicts
+- Improved logging untuk debugging
+- Proper handling untuk token vs WebSocket conflict scenarios
+
+### Additional Changes
+- `QnaScreen.kt`: Timeout handling, auto-retry, better error messages
+- `ChatRepository.kt`: Better conflict detection and logging
+- `WebSocketClient.kt`: Enhanced debugging logs
+- Retry logic dengan delay yang reasonable
+
+### Expected Behavior
+✅ Chatbot tidak lagi stuck di "menghubungkan"
+✅ Clear error messages jika ada konflik dengan scan
+✅ Auto-retry jika connection timeout
+✅ Better user feedback untuk semua scenarios
+
 ## Next Steps
 
 1. Test aplikasi secara menyeluruh
 2. Test transisi dari scan ke chatbot dan sebaliknya
 3. Monitor logs untuk error yang mungkin masih ada
-4. Optimasi performance jika diperlukan
-5. Consider adding offline fallback untuk AI responses
+4. Test retry mechanism
+5. Optimasi performance jika diperlukan
+6. Consider adding offline fallback untuk AI responses

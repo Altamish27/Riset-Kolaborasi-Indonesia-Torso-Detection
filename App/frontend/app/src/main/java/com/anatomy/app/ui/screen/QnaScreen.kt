@@ -74,6 +74,7 @@ import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.network.ChatResponse
 import com.anatomy.app.repository.ChatRepository
+import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.ui.theme.MicActive
 import com.anatomy.app.ui.theme.MicIdle
 import com.anatomy.app.ui.theme.NeonAmber
@@ -83,6 +84,7 @@ import com.anatomy.app.ui.theme.SurfaceCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -125,6 +127,7 @@ fun QnaScreen(isActive: Boolean = true) {
     var sessionCreateAttempts by remember { mutableStateOf(0) }
     var reconnectNonce by remember { mutableStateOf(0) }
     var reconnectCycles by remember { mutableStateOf(0) }
+    var connectionTimeout by remember { mutableStateOf(false) }
     val chatHistory = remember { mutableStateListOf<ChatMessage>() }
     val listState = rememberLazyListState()
 
@@ -274,40 +277,51 @@ fun QnaScreen(isActive: Boolean = true) {
         }
         
         if (flow == null) {
-            statusText = "Token login tidak ditemukan. Silakan login ulang."
+            // Could be WebSocket conflict or no token
+            val token = TokenManager.getAccessToken(context)
+            if (token.isNullOrBlank()) {
+                statusText = "Token login tidak ditemukan. Silakan login ulang."
+            } else {
+                statusText = "WebSocket sedang digunakan fitur lain. Menunggu..."
+                // Retry after delay
+                delay(2000L)
+                reconnectNonce += 1
+            }
             return@LaunchedEffect
         }
 
         try {
-            flow.collect { response ->
-                when {
-                    response.error != null -> {
-                        try {
-                            if (response.error.contains("Not authenticated", ignoreCase = true)) {
-                                statusText = "Menghubungkan ke backend..."
-                                return@collect
-                            }
-                            if (response.error.contains("Invalid or expired token", ignoreCase = true)) {
-                                isAuthenticated = false
+            // Add timeout for connection
+            withTimeoutOrNull(30_000L) {
+                flow.collect { response ->
+                    when {
+                        response.error != null -> {
+                            try {
+                                if (response.error.contains("Not authenticated", ignoreCase = true)) {
+                                    statusText = "Menghubungkan ke backend..."
+                                    return@collect
+                                }
+                                if (response.error.contains("Invalid or expired token", ignoreCase = true)) {
+                                    isAuthenticated = false
+                                    isProcessing = false
+                                    statusText = "Sesi login expired. Silakan login ulang."
+                                    return@collect
+                                }
+
+                                // If send_message failed due missing session, request a fresh session and retry queued question.
+                                if (response.error.contains("session_id and content are required", ignoreCase = true)) {
+                                    requestSessionIfNeeded(force = true)
+                                    return@collect
+                                }
+
                                 isProcessing = false
-                                statusText = "Sesi login expired. Silakan login ulang."
-                                return@collect
+                                statusText = "Error backend: ${response.error}"
+                            } catch (e: Exception) {
+                                Log.e("QnaScreen", "Error handling error response", e)
+                                isProcessing = false
+                                statusText = "Terjadi kesalahan sistem"
                             }
-
-                            // If send_message failed due missing session, request a fresh session and retry queued question.
-                            if (response.error.contains("session_id and content are required", ignoreCase = true)) {
-                                requestSessionIfNeeded(force = true)
-                                return@collect
-                            }
-
-                            isProcessing = false
-                            statusText = "Error backend: ${response.error}"
-                        } catch (e: Exception) {
-                            Log.e("QnaScreen", "Error handling error response", e)
-                            isProcessing = false
-                            statusText = "Terjadi kesalahan sistem"
                         }
-                    }
 
                     response.action == "authenticated" -> {
                         isAuthenticated = true
@@ -413,7 +427,17 @@ fun QnaScreen(isActive: Boolean = true) {
                         }
                     }
             }
-        }
+                }
+            } ?: run {
+                // Timeout occurred
+                Log.e("QnaScreen", "WebSocket connection timeout")
+                isProcessing = false
+                isSessionCreating = false
+                connectionTimeout = true
+                statusText = "Koneksi timeout. Mencoba ulang..."
+                delay(1000L)
+                reconnectNonce += 1
+            }
         } catch (e: Exception) {
             isProcessing = false
             isSessionCreating = false
@@ -421,22 +445,38 @@ fun QnaScreen(isActive: Boolean = true) {
         }
     }
 
+    // Auto-retry for connection timeout
+    LaunchedEffect(connectionTimeout, reconnectNonce) {
+        if (!isActive || !connectionTimeout) return@LaunchedEffect
+        
+        delay(3000L) // Wait before retry
+        connectionTimeout = false
+        
+        if (reconnectCycles < 3) {
+            statusText = "Mencoba koneksi ulang... (${reconnectCycles + 1}/3)"
+            reconnectCycles += 1
+            reconnectNonce += 1
+        } else {
+            statusText = "Gagal terhubung setelah beberapa percobaan. Periksa koneksi internet."
+        }
+    }
+
     LaunchedEffect(isAuthenticated, isSessionCreating, sessionId, isActive, sessionCreateAttempts, reconnectCycles) {
         if (!isActive || !isAuthenticated || !isSessionCreating || !sessionId.isNullOrBlank()) return@LaunchedEffect
 
         if (sessionCreateAttempts >= 3 && reconnectCycles < 1) {
-                        statusText = "Menyegarkan koneksi chat..."
-                        reconnectCycles += 1
-                        coroutineScope.launch {
-                            chatRepository.disconnectChat()
-                        }
-                        isAuthenticated = false
-                        isSessionCreating = false
-                        sessionId = null
-                        lastSessionRequestAt = 0L
-                        sessionCreateAttempts = 0
-                        reconnectNonce += 1
-                        return@LaunchedEffect
+            statusText = "Menyegarkan koneksi chat..."
+            reconnectCycles += 1
+            coroutineScope.launch {
+                chatRepository.disconnectChat()
+            }
+            isAuthenticated = false
+            isSessionCreating = false
+            sessionId = null
+            lastSessionRequestAt = 0L
+            sessionCreateAttempts = 0
+            reconnectNonce += 1
+            return@LaunchedEffect
         }
 
         if (sessionCreateAttempts >= 5) {

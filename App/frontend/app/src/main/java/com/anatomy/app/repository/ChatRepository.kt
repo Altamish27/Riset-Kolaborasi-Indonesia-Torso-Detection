@@ -39,7 +39,8 @@ class ChatRepository(
             )
             
             if (!connectionGranted) {
-                Log.e(TAG, "WebSocket connection denied - scan AI may be active")
+                val (currentType, currentOwner) = WebSocketManager.getConnectionInfo()
+                Log.w(TAG, "WebSocket connection denied - currently used by $currentOwner for $currentType")
                 return null
             }
 

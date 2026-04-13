@@ -37,7 +37,7 @@ class ChatWebSocketClient(private val httpClient: OkHttpClient) {
             
             webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
-                    Log.d(TAG, "Chat WebSocket connected")
+                    Log.d(TAG, "Chat WebSocket connected to: $wsUrl")
                     safeChannelSend(ChatResponse(action = "connected"))
                     // Immediately authenticate
                     val authMessage = mapOf(
@@ -48,12 +48,16 @@ class ChatWebSocketClient(private val httpClient: OkHttpClient) {
                     val sent = webSocket.send(authJson)
                     if (!sent) {
                         Log.e(TAG, "Failed to send chat auth payload on open")
+                    } else {
+                        Log.d(TAG, "Authentication message sent")
                     }
                 }
                 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     try {
+                        Log.d(TAG, "Received chat WebSocket message: ${text.take(200)}...")
                         val response = decodeJson.decodeFromString<ChatResponse>(text)
+                        Log.d(TAG, "Parsed chat response action: ${response.action}")
                         safeChannelSend(response)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing WebSocket message: $text", e)
