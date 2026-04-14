@@ -28,5 +28,10 @@ interface ApiService {
     
     // LLM explanations are now fetched via WebSocket /ws/chat (ChatWebSocketClient)
     // This keeps the connection stateful and integrates with backend chat infrastructure
+
+    // Create a new chat session (server will return session_id)
+    @POST("/chat/sessions")
+    suspend fun createSession(): SessionResponse
+
 }
 

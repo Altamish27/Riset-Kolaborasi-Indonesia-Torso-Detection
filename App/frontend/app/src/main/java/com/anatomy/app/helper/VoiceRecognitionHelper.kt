@@ -24,6 +24,7 @@ class VoiceRecognitionHelper(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     private var isCurrentlyListening = false
+    private var isReleased = false
 
     /**
      * Start listening for voice input.
@@ -37,6 +38,11 @@ class VoiceRecognitionHelper(private val context: Context) {
         onError: (Int) -> Unit
     ) {
         mainHandler.post {
+            if (isReleased) {
+                // Allow reactivation after a previous destroy call.
+                isReleased = false
+            }
+
             // Check availability
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 Log.e(TAG, "Speech recognition is not available on this device.")
@@ -69,6 +75,7 @@ class VoiceRecognitionHelper(private val context: Context) {
                     override fun onError(error: Int) {
                         Log.e(TAG, "Recognition error: $error")
                         isCurrentlyListening = false
+                        if (isReleased) return
                         // Dispatch callback on main thread
                         mainHandler.post { onError(error) }
                     }
@@ -79,6 +86,7 @@ class VoiceRecognitionHelper(private val context: Context) {
                         val bestResult = matches?.firstOrNull() ?: ""
                         Log.d(TAG, "Result: $bestResult")
                         isCurrentlyListening = false
+                        if (isReleased) return
                         // Dispatch callback on main thread
                         mainHandler.post { onResult(bestResult) }
                     }
@@ -115,6 +123,7 @@ class VoiceRecognitionHelper(private val context: Context) {
      */
     fun stopListening() {
         mainHandler.post {
+            if (isReleased) return@post
             try {
                 speechRecognizer?.stopListening()
                 isCurrentlyListening = false
@@ -129,6 +138,10 @@ class VoiceRecognitionHelper(private val context: Context) {
      * Destroy the recognizer and free resources (internal, call from main thread only).
      */
     private fun internalDestroy() {
+        if (speechRecognizer == null) {
+            isCurrentlyListening = false
+            return
+        }
         try {
             speechRecognizer?.cancel()
             speechRecognizer?.destroy()
@@ -145,6 +158,11 @@ class VoiceRecognitionHelper(private val context: Context) {
      */
     fun destroy() {
         mainHandler.post {
+            if (isReleased) {
+                Log.d(TAG, "Destroy skipped: helper already released")
+                return@post
+            }
+            isReleased = true
             internalDestroy()
             Log.d(TAG, "VoiceRecognitionHelper destroyed.")
         }

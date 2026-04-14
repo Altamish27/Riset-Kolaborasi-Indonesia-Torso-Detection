@@ -75,6 +75,7 @@ import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.network.ChatResponse
 import com.anatomy.app.repository.ChatRepository
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.UnifiedWebSocketManager
 import com.anatomy.app.ui.theme.MicActive
 import com.anatomy.app.ui.theme.MicIdle
 import com.anatomy.app.ui.theme.NeonAmber
@@ -127,7 +128,9 @@ fun QnaScreen(isActive: Boolean = true) {
     var sessionCreateAttempts by remember { mutableStateOf(0) }
     var reconnectNonce by remember { mutableStateOf(0) }
     var reconnectCycles by remember { mutableStateOf(0) }
+    var authReconnectAttempts by remember { mutableStateOf(0) }
     var connectionTimeout by remember { mutableStateOf(false) }
+    var processingStartedAt by remember { mutableStateOf(0L) }
     val chatHistory = remember { mutableStateListOf<ChatMessage>() }
     val listState = rememberLazyListState()
 
@@ -144,18 +147,48 @@ fun QnaScreen(isActive: Boolean = true) {
         isSessionCreating = true
         sessionCreateAttempts += 1
         statusText = "Menyiapkan sesi chat..."
-        val sent = chatRepository.createSession()
-        if (!sent) {
-            statusText = "Koneksi chat belum siap, mencoba sambung ulang..."
-            isSessionCreating = false
-            reconnectNonce += 1
+
+        // Create session via HTTP asynchronously
+        coroutineScope.launch {
+            val newSession = try {
+                chatRepository.createSession()
+            } catch (e: Exception) {
+                null
+            }
+
+            if (newSession.isNullOrBlank()) {
+                statusText = "Koneksi chat belum siap, mencoba sambung ulang..."
+                isSessionCreating = false
+                reconnectNonce += 1
+            } else {
+                sessionId = newSession
+                isSessionCreating = false
+                sessionCreateAttempts = 0
+                statusText = "Sesi chat siap"
+                val queued = pendingQuestion
+                if (!queued.isNullOrBlank()) {
+                    pendingQuestion = null
+                    statusText = "Mengirim pertanyaan ke backend..."
+                    val sent = chatRepository.sendChatMessage(sessionId, queued)
+                    if (!sent) {
+                        pendingQuestion = queued
+                        statusText = "Koneksi chat terputus, menyambung ulang..."
+                        reconnectNonce += 1
+                    }
+                }
+            }
         }
+    }
+
+    fun failCurrentRequest(message: String) {
+        isProcessing = false
+        statusText = message
     }
 
     fun sendQuestionToBackend(question: String) {
         if (!isAuthenticated) {
             pendingQuestion = question
-            statusText = "Menghubungkan ke backend..."
+            failCurrentRequest("Menghubungkan ke backend...")
             return
         }
 
@@ -167,7 +200,7 @@ fun QnaScreen(isActive: Boolean = true) {
         val sent = chatRepository.sendChatMessage(sessionId, question)
         if (!sent) {
             pendingQuestion = question
-            statusText = "Koneksi chat terputus, menyambung ulang..."
+            failCurrentRequest("Koneksi chat terputus, menyambung ulang...")
             reconnectNonce += 1
         }
     }
@@ -191,6 +224,7 @@ fun QnaScreen(isActive: Boolean = true) {
                     }
                     // Process the recognized question
                     isProcessing = true
+                    processingStartedAt = System.currentTimeMillis()
                     if (isActive) statusText = "Memproses..."
                     chatHistory.add(ChatMessage(text = result, isUser = true))
 
@@ -227,6 +261,7 @@ fun QnaScreen(isActive: Boolean = true) {
             }
 
             isProcessing = true
+            processingStartedAt = System.currentTimeMillis()
             statusText = "Memproses..."
             chatHistory.add(ChatMessage(text = question, isUser = true))
 
@@ -264,6 +299,8 @@ fun QnaScreen(isActive: Boolean = true) {
             sessionId = null
             sessionCreateAttempts = 0
             reconnectCycles = 0
+            authReconnectAttempts = 0
+            isProcessing = false
             return@LaunchedEffect
         }
 
@@ -280,6 +317,14 @@ fun QnaScreen(isActive: Boolean = true) {
             statusText = "Token login tidak ditemukan. Silakan login ulang."
             return@LaunchedEffect
         }
+        
+        // If WebSocket was already authenticated before we subscribed to the flow,
+        // set isAuthenticated immediately so UI doesn't wait
+        if (UnifiedWebSocketManager.isAuthenticated()) {
+            isAuthenticated = true
+            Log.d("QnaScreen", "WebSocket already authenticated, setting isAuthenticated=true")
+            requestSessionIfNeeded(force = true)
+        }
 
         try {
             // Add timeout for connection
@@ -289,36 +334,104 @@ fun QnaScreen(isActive: Boolean = true) {
                         response.error != null -> {
                             try {
                                 if (response.error.contains("Not authenticated", ignoreCase = true)) {
-                                    statusText = "Menghubungkan ke backend..."
+                                    failCurrentRequest("Menghubungkan ulang ke backend...")
+                                    isAuthenticated = false
+                                    isSessionCreating = false
+                                    sessionId = null
+                                    if (authReconnectAttempts < 3) {
+                                        authReconnectAttempts += 1
+                                        reconnectNonce += 1
+                                    } else {
+                                        failCurrentRequest("Sesi autentikasi bermasalah. Silakan login ulang.")
+                                    }
                                     return@collect
                                 }
                                 if (response.error.contains("Invalid or expired token", ignoreCase = true)) {
                                     isAuthenticated = false
-                                    isProcessing = false
-                                    statusText = "Sesi login expired. Silakan login ulang."
+                                    failCurrentRequest("Sesi login expired. Silakan login ulang.")
                                     return@collect
                                 }
 
                                 // If send_message failed due missing session, request a fresh session and retry queued question.
                                 if (response.error.contains("session_id and content are required", ignoreCase = true)) {
+                                    failCurrentRequest("Sesi chat tidak valid. Menyiapkan sesi baru...")
                                     requestSessionIfNeeded(force = true)
                                     return@collect
                                 }
 
-                                isProcessing = false
-                                statusText = "Error backend: ${response.error}"
+                                failCurrentRequest("Error backend: ${response.error}")
                             } catch (e: Exception) {
                                 Log.e("QnaScreen", "Error handling error response", e)
-                                isProcessing = false
-                                statusText = "Terjadi kesalahan sistem"
+                                failCurrentRequest("Terjadi kesalahan sistem")
                             }
                         }
 
+                    // Some backend builds send chat payload with assistant_message but null action.
+                    (response.action == "chat_response") ||
+                        (response.assistant_message != null) -> {
+                        try {
+                            Log.d("QnaScreen", "chat_response handler: raw response=${response.toString().take(500)}")
+                            val answer = extractAssistantAnswer(response)
+                            Log.d("QnaScreen", "Extracted answer='$answer' isBlank=${answer.isBlank()}")
+
+                            if (answer.isBlank()) {
+                                isProcessing = false
+                                statusText = "Respons backend kosong."
+                                Log.d("QnaScreen", "Answer is blank, setting status")
+                                return@collect
+                            }
+
+                            Log.d("QnaScreen", "Adding to chatHistory: $answer")
+                            chatHistory.add(ChatMessage(text = answer, isUser = false))
+                            Log.d("QnaScreen", "chatHistory size now: ${chatHistory.size}")
+
+                            coroutineScope.launch {
+                                try {
+                                    listState.animateScrollToItem((chatHistory.size - 1).coerceAtLeast(0))
+                                } catch (e: Exception) {
+                                    Log.e("QnaScreen", "Error scrolling to item", e)
+                                }
+                            }
+
+                            isProcessing = false
+                            statusText = "Menjawab via suara..."
+
+                            try {
+                                Log.d("QnaScreen", "Speaking answer: ${answer.take(100)}")
+                                AudioAssistant.speak(answer)
+
+                                // Set callback for when speech completes
+                                AudioAssistant.onUtteranceCompleted = {
+                                    if (isActive) {
+                                        Log.d("QnaScreen", "Speech completed via callback")
+                                        statusText = "Siap. Tekan mic untuk bertanya lagi."
+                                    }
+                                }
+
+                                // Timeout fallback: if TTS takes too long or callback doesn't fire,
+                                // auto-transition after 15 seconds
+                                coroutineScope.launch {
+                                    delay(15_000L)
+                                    if (isActive && statusText == "Menjawab via suara...") {
+                                        Log.d("QnaScreen", "TTS timeout fallback: transitioning to ready")
+                                        statusText = "Siap. Tekan mic untuk bertanya lagi."
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e("QnaScreen", "Error speaking answer", e)
+                                statusText = "Siap. Tekan mic untuk bertanya lagi."
+                            }
+                        } catch (e: Exception) {
+                            Log.e("QnaScreen", "Error processing chat response", e)
+                            isProcessing = false
+                            statusText = "Error memproses jawaban"
+                        }
+                    }
+
                     response.action == "authenticated" -> {
                         isAuthenticated = true
+                        authReconnectAttempts = 0
                         reconnectCycles = 0
-                        // Fallback path: if backend already has sessions, reuse one immediately.
-                        chatRepository.listSessions()
                         requestSessionIfNeeded(force = true)
                         statusText = "Autentikasi berhasil, membuat sesi..."
                     }
@@ -379,44 +492,6 @@ fun QnaScreen(isActive: Boolean = true) {
                         }
                     }
 
-                    response.action == "chat_response" -> {
-                        try {
-                            val answer = extractAssistantAnswer(response)
-                            if (answer.isBlank()) {
-                                isProcessing = false
-                                statusText = "Respons backend kosong."
-                                return@collect
-                            }
-
-                            chatHistory.add(ChatMessage(text = answer, isUser = false))
-                            coroutineScope.launch {
-                                try {
-                                    listState.animateScrollToItem((chatHistory.size - 1).coerceAtLeast(0))
-                                } catch (e: Exception) {
-                                    Log.e("QnaScreen", "Error scrolling to item", e)
-                                }
-                            }
-
-                            isProcessing = false
-                            statusText = "Menjawab via suara..."
-
-                            try {
-                                AudioAssistant.speak(answer)
-                                AudioAssistant.onUtteranceCompleted = {
-                                    if (isActive) {
-                                        statusText = "Siap. Tekan mic untuk bertanya lagi."
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e("QnaScreen", "Error speaking answer", e)
-                                statusText = "Siap. Tekan mic untuk bertanya lagi."
-                            }
-                        } catch (e: Exception) {
-                            Log.e("QnaScreen", "Error processing chat response", e)
-                            isProcessing = false
-                            statusText = "Error memproses jawaban"
-                        }
-                    }
             }
                 }
             } ?: run {
@@ -433,6 +508,18 @@ fun QnaScreen(isActive: Boolean = true) {
             isProcessing = false
             isSessionCreating = false
             statusText = "Koneksi chat bermasalah. Coba buka ulang halaman."
+        }
+    }
+
+    // Hard timeout so UI cannot remain in processing forever.
+    LaunchedEffect(isProcessing, processingStartedAt) {
+        if (!isProcessing || processingStartedAt <= 0L) return@LaunchedEffect
+
+        val started = processingStartedAt
+        delay(35_000L)
+
+        if (isProcessing && processingStartedAt == started) {
+            failCurrentRequest("Respons backend terlalu lama. Coba kirim lagi.")
         }
     }
 
@@ -479,11 +566,6 @@ fun QnaScreen(isActive: Boolean = true) {
 
         if (isActive && isAuthenticated && isSessionCreating && sessionId.isNullOrBlank()) {
             statusText = "Menyiapkan sesi chat... (${sessionCreateAttempts + 1}/5)"
-            if (sessionCreateAttempts % 2 == 0) {
-                // Sometimes create_session was processed but response got delayed/lost.
-                // Ask backend for existing sessions first, then create again if empty.
-                chatRepository.listSessions()
-            }
             requestSessionIfNeeded(force = true)
         }
     }
@@ -865,7 +947,12 @@ fun ChatBubble(message: ChatMessage) {
 }
 
 private fun extractAssistantAnswer(response: ChatResponse): String {
-    response.answer?.takeIf { it.isNotBlank() }?.let { return it }
+    Log.d("QnaScreen", "extractAssistantAnswer called: answer=${response.answer?.take(50)} assistant_message=${response.assistant_message}")
+    
+    response.answer?.takeIf { it.isNotBlank() }?.let { 
+        Log.d("QnaScreen", "Extracted from .answer field: ${it.take(100)}")
+        return it 
+    }
 
     val content = runCatching {
         response.assistant_message
@@ -875,5 +962,6 @@ private fun extractAssistantAnswer(response: ChatResponse): String {
             ?.contentOrNull
     }.getOrNull()
 
+    Log.d("QnaScreen", "Extracted from .assistant_message.content: ${content?.take(100)}")
     return content?.trim().orEmpty()
 }

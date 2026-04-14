@@ -2,11 +2,18 @@ package com.anatomy.app.network
 
 import android.util.Log
 import com.anatomy.app.config.AppConfig
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
@@ -24,14 +31,18 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
     
     private val TAG = "UnifiedWebSocketClient"
     private var webSocket: WebSocket? = null
-    private val messageChannel = Channel<ChatResponse>(Channel.UNLIMITED)
+    private val messageFlow = MutableSharedFlow<ChatResponse>(
+        replay = 0,
+        extraBufferCapacity = 128,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     private val decodeJson = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
     }
     private val encodeJson = Json { explicitNulls = false }
     
-    val messages: Flow<ChatResponse> = messageChannel.receiveAsFlow()
+    val messages: Flow<ChatResponse> = messageFlow.asSharedFlow()
     
     enum class MessageType {
         CHAT,
@@ -41,6 +52,8 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
     
     private var isConnected = false
     private var isAuthenticated = false
+    private val pingScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var pingJob: Job? = null
     
     fun connect(baseUrl: String, token: String) {
         try {
@@ -84,6 +97,7 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
                         if (response.action == "authenticated") {
                             isAuthenticated = true
                             Log.d(TAG, "Unified WebSocket authenticated successfully")
+                            startPing()
                         }
                         
                         Log.d(TAG, "Parsed unified response action: ${response.action}")
@@ -103,12 +117,14 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
                     Log.d(TAG, "Unified WebSocket closing: $code $reason")
                     isConnected = false
                     isAuthenticated = false
+                    stopPing()
                 }
                 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                     Log.e(TAG, "Unified WebSocket failure", t)
                     isConnected = false
                     isAuthenticated = false
+                    stopPing()
                     safeChannelSend(
                         ChatResponse(
                             action = "error",
@@ -132,11 +148,9 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
     
     private fun safeChannelSend(response: ChatResponse) {
         try {
-            if (!messageChannel.isClosedForSend) {
-                val result = messageChannel.trySend(response)
-                if (result.isFailure) {
-                    Log.e(TAG, "Failed to send message to channel: ${result.exceptionOrNull()?.message}")
-                }
+            val emitted = messageFlow.tryEmit(response)
+            if (!emitted) {
+                Log.w(TAG, "Dropping unified message due to backpressure: action=${response.action}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error sending to channel", e)
@@ -235,17 +249,48 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
     
     fun isConnected(): Boolean = isConnected && isAuthenticated
     
+    fun isWebSocketAuthenticated(): Boolean = isAuthenticated
+    
     fun disconnect() {
         try {
             webSocket?.close(1000, "Client disconnect")
             webSocket = null
             isConnected = false
             isAuthenticated = false
-            if (!messageChannel.isClosedForSend) {
-                messageChannel.close()
-            }
+            stopPing()
         } catch (e: Exception) {
             Log.e(TAG, "Error during unified disconnect", e)
+        }
+    }
+
+    private fun startPing() {
+        try {
+            // cancel any existing job
+            pingJob?.cancel()
+            pingJob = pingScope.launch {
+                while (isConnected && isAuthenticated) {
+                    try {
+                        val sent = send(mapOf("action" to "ping"))
+                        if (!sent) {
+                            Log.w(TAG, "Ping send failed")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error sending ping", e)
+                    }
+                    delay(5_000L)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting ping job", e)
+        }
+    }
+
+    private fun stopPing() {
+        try {
+            pingJob?.cancel()
+            pingJob = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping ping job", e)
         }
     }
 }

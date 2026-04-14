@@ -73,21 +73,21 @@ All endpoints below are mounted on the app root unless otherwise specified. See 
    - Response: `{ "message": "Successfully logged out" }`
 
 **Chat session management**
-- GET `/sessions` — list sessions (protected)
+- GET `/chat/sessions` — list sessions (protected)
    - Header: `Authorization: Bearer <access_token>`
    - Response: array of session objects (summary fields: `session_id`, `title`, `created_at`, `updated_at`).
 
-- POST `/sessions` — create a new session (protected)
+- POST `/chat/sessions` — create a new session (protected)
    - Header: `Authorization: Bearer <access_token>`
    - Body: none
    - Response: `{ "session_id": "<uuid>" }`
 
-- GET `/sessions/{session_id}/history` — get full session messages (protected)
+- GET `/chat/sessions/{session_id}/history` — get full session messages (protected)
    - Header: `Authorization: Bearer <access_token>`
    - Response: `{ "session_id": "<uuid>", "messages": [ { role, content, timestamp }, ... ] }`
    - Errors: 404 if session not found or not owned by the authenticated user.
 
-- DELETE `/sessions/{session_id}` — delete session (protected)
+- DELETE `/chat/sessions/{session_id}` — delete session (protected)
    - Header: `Authorization: Bearer <access_token>`
    - Response: `{ "deleted": true, "session_id": "<uuid>" }`
 
@@ -188,7 +188,7 @@ ws.onmessage = (ev) => {
 - Token handling: store `access_token` (short-lived) and `refresh_token` (longer-lived). When requests return 401, try `/auth/refresh` with `refresh_token` to get a new `access_token`.
 - WebSocket: authenticate immediately after open. The connection is tied to the authenticated user for the lifetime of the socket.
 - Concurrency: the backend serializes operations per `session_id` (in-process async locks) and caps concurrent LLM calls globally with an environment-driven semaphore `LLM_MAX_CONCURRENCY` (default `5`).
-   - Result: multiple `send_message` calls against the same `session_id` are processed sequentially. Many concurrent messages across different sessions may be limited by the LLM concurrency cap and therefore may queue briefly.
+   - Result: multiple `send_message` calls against the same `sessadb -s emulator-5554 shell am start -n com.anatomy.app/.MainActivityion_id` are processed sequentially. Many concurrent messages across different sessions may be limited by the LLM concurrency cap and therefore may queue briefly.
 - Timeouts / keepalives: the app supports an application-level `ping` action. There is no enforced app-side idle timeout by default (the server or reverse proxy might close idle sockets). Consider periodically sending `ping` from the client if necessary.
 - Error handling: display server `error` objects to the user as friendly messages. If LLM errors occur, the message returned will include a fallback answer or an error field.
 

@@ -26,6 +26,11 @@ data class RefreshRequest(
     val refresh_token: String
 )
 
+@Serializable
+data class SessionResponse(
+    val session_id: String
+)
+
 /**
  * Chat Models
  */

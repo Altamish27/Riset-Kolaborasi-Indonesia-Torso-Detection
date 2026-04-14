@@ -75,6 +75,13 @@ object UnifiedWebSocketManager {
     }
     
     /**
+     * Check if WebSocket is authenticated
+     */
+    fun isAuthenticated(): Boolean {
+        return unifiedClient?.isWebSocketAuthenticated() == true
+    }
+    
+    /**
      * Get message flow
      */
     fun getMessages(): Flow<ChatResponse>? {

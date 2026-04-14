@@ -22,22 +22,37 @@ class ChatRepository(
     /**
      * Connect to chat WebSocket (now uses unified connection)
      */
-    fun connectChat(): Flow<ChatResponse>? {
+    suspend fun connectChat(): Flow<ChatResponse>? {
         return try {
             if (UnifiedWebSocketManager.isConnected()) {
                 Log.d(TAG, "Using existing unified WebSocket connection")
                 return UnifiedWebSocketManager.getMessages()
             }
-            
+
+            // Create session via HTTP first (per API.md) to obtain session_id
+            val api = HttpClientFactory.createApiService(context)
+            val sessionResp = try {
+                api.createSession()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create session via HTTP", e)
+                null
+            }
+
+            if (sessionResp == null) {
+                Log.e(TAG, "Unable to create chat session before websocket connect")
+                return null
+            }
+
             val token = TokenManager.getAccessToken(context)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "No access token available for chat connection")
                 return null
             }
 
-            // Connect to unified WebSocket
-            Log.d(TAG, "Connecting to unified WebSocket for chat")
+            // Connect to unified WebSocket after obtaining session id
+            Log.d(TAG, "Connecting to unified WebSocket for chat (session: ${sessionResp.session_id})")
             UnifiedWebSocketManager.connect(context, token)
+            UnifiedWebSocketManager.getMessages()
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting to unified WebSocket", e)
             null
@@ -62,10 +77,17 @@ class ChatRepository(
     }
     
     /**
-     * Create a new chat session (now uses unified connection)
+     * Create a new chat session via HTTP and return session_id
      */
-    fun createSession(): Boolean {
-        return UnifiedWebSocketManager.createSession()
+    suspend fun createSession(): String? {
+        return try {
+            val api = HttpClientFactory.createApiService(context)
+            val resp = api.createSession()
+            resp.session_id
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating session via HTTP", e)
+            null
+        }
     }
     
     /**

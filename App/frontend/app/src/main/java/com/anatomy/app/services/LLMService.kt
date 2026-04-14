@@ -227,11 +227,35 @@ class LLMService(private val context: Context) {
                     Log.e(TAG, "Unified WebSocket not connected")
                     return@withContext ""
                 }
+
+                if (!UnifiedWebSocketManager.isAuthenticated()) {
+                    Log.e(TAG, "Unified WebSocket is not authenticated")
+                    return@withContext ""
+                }
+
+                // /ws/chat does not support scan-specific websocket actions.
+                // We create/reuse a chat session and send prompt as send_message.
+                val activeSessionId = if (currentSessionId.isNullOrBlank()) {
+                    val newSession = try {
+                        HttpClientFactory.createApiService(context).createSession().session_id
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to create session for unified scan request", e)
+                        null
+                    }
+                    currentSessionId = newSession
+                    newSession
+                } else {
+                    currentSessionId
+                }
+
+                if (activeSessionId.isNullOrBlank()) {
+                    Log.e(TAG, "No session available for unified scan request")
+                    return@withContext ""
+                }
                 
-                // Send scan request via unified WebSocket
-                val sent = UnifiedWebSocketManager.sendScanRequest(organ, prompt)
+                val sent = UnifiedWebSocketManager.sendChatMessage(activeSessionId, prompt)
                 if (!sent) {
-                    Log.e(TAG, "Failed to send scan request")
+                    Log.e(TAG, "Failed to send unified scan message")
                     return@withContext ""
                 }
                 
@@ -240,7 +264,17 @@ class LLMService(private val context: Context) {
                 // Wait for response with timeout
                 val response = withTimeoutOrNull(25_000L) {
                     UnifiedWebSocketManager.getMessages()?.firstOrNull { chatResponse ->
-                        chatResponse.action == "chat_response" && !chatResponse.answer.isNullOrBlank()
+                        (chatResponse.action == "chat_response" || chatResponse.assistant_message != null) &&
+                            chatResponse.session_id == activeSessionId &&
+                            (
+                                !chatResponse.answer.isNullOrBlank() ||
+                                    !chatResponse.assistant_message
+                                        ?.jsonObject
+                                        ?.get("content")
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                        .isNullOrBlank()
+                                )
                     }
                 }
                 

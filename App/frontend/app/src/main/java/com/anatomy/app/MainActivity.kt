@@ -21,6 +21,10 @@ import com.anatomy.app.ui.screen.MainPagerScreen
 import com.anatomy.app.ui.theme.AnatomyAppTheme
 import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.utils.UnifiedWebSocketManager
+import com.anatomy.app.network.HttpClientFactory
+import com.anatomy.app.repository.AuthRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
 
 /**
@@ -66,23 +70,44 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Check if user is logged in
-                    val isLoggedIn = TokenManager.isLoggedIn(this@MainActivity)
-                    val loginState = remember { mutableStateOf(!isLoggedIn) }
-                    
-                    if (loginState.value) {
-                        LoginScreen(onLoginSuccess = {
-                            loginState.value = false
-                        })
-                    } else {
-                        // Connect to unified WebSocket when logged in
-                        LaunchedEffect(Unit) {
+                    // Prepare API/auth helpers
+                    val apiService = remember { HttpClientFactory.createApiService(this@MainActivity) }
+                    val authRepository = remember { AuthRepository(apiService, this@MainActivity) }
+
+                    // Check if user is logged in (has stored access token)
+                    val isLoggedInStored = TokenManager.isLoggedIn(this@MainActivity)
+                    val loginState = remember { mutableStateOf(!isLoggedInStored) }
+
+                    // If there is a stored token, validate/refresh it before showing main UI
+                    LaunchedEffect(isLoggedInStored) {
+                        if (isLoggedInStored) {
+                            val refreshResult = withContext(Dispatchers.IO) {
+                                authRepository.refresh()
+                            }
+                            if (refreshResult.isSuccess) {
+                                loginState.value = false
+                            } else {
+                                TokenManager.clearTokens(this@MainActivity)
+                                loginState.value = true
+                            }
+                        }
+                    }
+
+                    // Connect WebSocket when loginState becomes authenticated
+                    LaunchedEffect(loginState.value) {
+                        if (!loginState.value) {
                             val token = TokenManager.getAccessToken(this@MainActivity)
                             if (!token.isNullOrBlank()) {
                                 UnifiedWebSocketManager.connect(this@MainActivity, token)
                             }
                         }
-                        
+                    }
+
+                    if (loginState.value) {
+                        LoginScreen(onLoginSuccess = {
+                            loginState.value = false
+                        })
+                    } else {
                         MainPagerScreen()
                     }
                 }
