@@ -31,10 +31,30 @@ class AnatomyApp : Application() {
         super.onCreate()
         Log.d(TAG, "AnatomyApp initializing...")
         
-        AudioAssistant.init(this)
-        HapticHelper.init(this)
-        database = AnatomyDatabase.getInstance(this)
-        organService = OrganService(this)
+        try {
+            AudioAssistant.init(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize AudioAssistant", e)
+        }
+        
+        try {
+            HapticHelper.init(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize HapticHelper", e)
+        }
+        
+        try {
+            database = AnatomyDatabase.getInstance(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize Database", e)
+            throw e
+        }
+        
+        try {
+            organService = OrganService(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize OrganService", e)
+        }
         
         // Sync organs from API in background (non-blocking)
         CoroutineScope(Dispatchers.Default).launch {

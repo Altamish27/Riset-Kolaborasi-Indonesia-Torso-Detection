@@ -1,0 +1,37 @@
+description: Ultralytics YOLO11n model trained on /content/dataset_torso/data.yaml
+author: Ultralytics
+date: '2026-04-13T02:24:34.936565'
+version: 8.4.37
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: Dada_Dalam
+  1: Dada_Luar
+  2: Ginjal_Dalam
+  3: Ginjal_Luar
+  4: Hati
+  5: Jantung
+  6: Kepala
+  7: Lambung
+  8: Otak
+  9: Paru-Paru_Kanan
+  10: Paru-paru_Kiri
+  11: Penis
+  12: Rusuk
+  13: Tenggorokan
+  14: Usus
+  15: Vagina
+args:
+  batch: 1
+  fraction: 1.0
+  half: true
+  int8: false
+  nms: false
+channels: 3
+end2end: false

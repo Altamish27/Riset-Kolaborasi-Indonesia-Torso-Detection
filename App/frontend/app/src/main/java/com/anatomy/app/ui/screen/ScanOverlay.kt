@@ -27,7 +27,6 @@ import com.anatomy.app.ui.theme.BoundingBoxGlow
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import com.anatomy.app.ui.theme.ScanWaveColor
-import com.anatomy.app.ui.theme.TextOnNeon
 
 /**
  * ScanOverlay — Canvas-based composable drawn ON TOP of the camera preview.
@@ -69,17 +68,6 @@ fun ScanOverlay(
         ),
         label = "glow_alpha"
     )
-
-    // Label text paint (native Android Paint for Canvas drawText)
-    val labelPaint = Paint().apply {
-        color = TextOnNeon.toArgb()
-        textSize = 40f
-        isAntiAlias = true
-        typeface = android.graphics.Typeface.create(
-            android.graphics.Typeface.DEFAULT,
-            android.graphics.Typeface.BOLD
-        )
-    }
 
     val confidencePaint = Paint().apply {
         color = NeonGreen.toArgb()
@@ -199,7 +187,8 @@ fun ScanOverlay(
             val confidencePct = if (detection.confidence > 0f) {
                 "${(detection.confidence * 100).toInt()}%"
             } else "mock"
-            val labelText = "${detection.organName} — $confidencePct"
+            val classLabel = detection.mockLabel.ifBlank { detection.organName }
+            val labelText = "$classLabel — $confidencePct"
 
             // Measure text width for background
             val textWidth = confidencePaint.measureText(labelText)

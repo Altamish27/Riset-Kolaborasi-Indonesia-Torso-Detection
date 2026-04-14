@@ -74,8 +74,11 @@ object AppConfig {
     
     /**
      * Get WebSocket Scan Path value (for LLM scan AI requests)
+     * 
+     * FALLBACK: If backend doesn't support /ws/scan yet, use /ws/voice
+     * TODO: Change back to DEFAULT_WS_SCAN_PATH when backend is ready
      */
-    fun getWsScanPathDefault(): String = DEFAULT_WS_SCAN_PATH
+    fun getWsScanPathDefault(): String = DEFAULT_WS_VOICE_PATH // Fallback to voice endpoint
     
     /**
      * Set WebSocket Chat Path in configuration

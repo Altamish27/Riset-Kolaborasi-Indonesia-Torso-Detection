@@ -48,8 +48,8 @@ android {
 
     sourceSets {
         getByName("main") {
-            // Use model file directly from frontend1/models
-            assets.srcDirs("../models")
+            // Keep default app assets and include external models directory.
+            assets.srcDirs("src/main/assets", "../models")
         }
     }
 
@@ -111,6 +111,7 @@ dependencies {
 
     // TFLite Object Detection
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")

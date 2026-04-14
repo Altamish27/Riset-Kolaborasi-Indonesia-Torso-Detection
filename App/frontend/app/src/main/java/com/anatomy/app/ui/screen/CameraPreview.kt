@@ -1,8 +1,9 @@
 package com.anatomy.app.ui.screen
 
 import android.util.Log
-import android.util.Size
+import android.view.Surface
 import android.view.ViewGroup
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -45,7 +46,7 @@ fun CameraPreview(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            scaleType = PreviewView.ScaleType.FILL_CENTER
+            scaleType = PreviewView.ScaleType.FIT_CENTER
         }
     }
 
@@ -70,7 +71,9 @@ fun CameraPreview(
                     // Image analysis use case
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(Size(416, 416))
+                        .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                        .setTargetRotation(Surface.ROTATION_0)
                         .build()
                         .apply {
                             analyzer?.let {
