@@ -65,6 +65,8 @@ class TFLiteObjectAnalyzer(
     private var inputType: DataType = DataType.FLOAT32
     private var outputShape: IntArray = intArrayOf()
     private val classNameById = mutableMapOf<Int, String>()
+    private val lock = Any()
+    private var isClosed = false
     private var imageProcessor: ImageProcessor? = null
     private val tensorImage = TensorImage(DataType.UINT8)
     private var rgbFrameBitmap: Bitmap? = null
@@ -167,12 +169,18 @@ class TFLiteObjectAnalyzer(
 
         analyzedFrames += 1
 
-        if (!isModelLoaded) {
-            maybePushSummary("model_not_loaded")
-            onDetection(null)
-            image.close()
-            return
-        }
+        synchronized(lock) {
+            if (isClosed) {
+                image.close()
+                return
+            }
+
+            if (!isModelLoaded) {
+                maybePushSummary("model_not_loaded")
+                onDetection(null)
+                image.close()
+                return
+            }
 
         try {
             val bitmap = imageProxyToBitmap(image)
@@ -203,12 +211,13 @@ class TFLiteObjectAnalyzer(
                 maybePushSummary("no_objects")
                 onDetection(null)
             }
-        } catch (e: Throwable) {
-            Log.e(TAG, "Analysis error", e)
-            pushDebug("Error analyze: ${e.message ?: "unknown"}")
-            onDetection(null)
-        } finally {
-            image.close()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Analysis error", e)
+                pushDebug("Error analyze: ${e.message ?: "unknown"}")
+                onDetection(null)
+            } finally {
+                image.close()
+            }
         }
     }
 
@@ -318,10 +327,13 @@ class TFLiteObjectAnalyzer(
     }
 
     fun close() {
-        interpreter?.close()
-        gpuDelegate?.close()
-        interpreter = null
-        gpuDelegate = null
+        synchronized(lock) {
+            isClosed = true
+            interpreter?.close()
+            gpuDelegate?.close()
+            interpreter = null
+            gpuDelegate = null
+        }
     }
 
     fun updateConfidenceThreshold(newThreshold: Float) {

@@ -106,11 +106,21 @@ fun CameraPreview(
     // Cleanup on dispose
     DisposableEffect(Unit) {
         onDispose {
+            // Unbind camera use-cases first (must run on main thread via its own executor),
+            // then shut down the background analysis executor to avoid
+            // RejectedExecutionException if the future fires after shutdown.
+            try {
+                val future = ProcessCameraProvider.getInstance(context)
+                future.addListener({
+                    try { future.get().unbindAll() } catch (e: Exception) {
+                        Log.e("CameraPreview", "unbindAll on dispose failed", e)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            } catch (e: Exception) {
+                Log.e("CameraPreview", "Failed to schedule unbind on dispose", e)
+            }
+            // Shut down the analysis thread only after scheduling the unbind.
             cameraExecutor.shutdown()
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-            cameraProviderFuture.addListener({
-                cameraProviderFuture.get().unbindAll()
-            }, ContextCompat.getMainExecutor(context))
         }
     }
 

@@ -587,30 +587,10 @@ fun QnaScreen(isActive: Boolean = true) {
         }
     }
 
-    // Cleanup on page deactivation
-    DisposableEffect(isActive) {
-        onDispose {
-            if (!isActive) {
-            try {
-                chatRepository.disconnectChat()
-            } catch (e: Exception) {
-                Log.e("QnaScreen", "Error disconnecting chat on dispose", e)
-            }
-                isAuthenticated = false
-                isSessionCreating = false
-                sessionId = null
-                sessionCreateAttempts = 0
-                reconnectCycles = 0
-                try {
-                    voiceHelper.stopListening()
-                } catch (e: Exception) {
-                    Log.e("QnaScreen", "Error stopping voice helper on dispose", e)
-                }
-                AudioAssistant.onUtteranceCompleted = null
-                isListening = false
-            }
-        }
-    }
+    // Note: page-deactivation cleanup (stopMic, disconnectChat, reset session state)
+    // is handled by LaunchedEffect(isActive, reconnectNonce) and LaunchedEffect(isActive)
+    // above. Mutating Compose state in DisposableEffect.onDispose is unsafe when the
+    // composable is still alive (just inactive in a pager), so that block was removed.
 
     // Full cleanup on composable dispose
     DisposableEffect(Unit) {

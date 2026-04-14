@@ -307,12 +307,16 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     LaunchedEffect(isActive) {
         isPageActive = isActive
         if (!isActive) {
+            // Increment session token IMMEDIATELY (synchronous) so all in-flight
+            // onDetection / onResult callbacks see the stale token and bail out.
             sessionToken += 1
+            // Stop voice recognizer right away — no delay.
             voiceHelper.stopListening()
             isVoiceListening = false
             isAiBusy = false
-            // Give time for any pending AI requests to complete before disconnecting
-            delay(1000L)
+            // Small grace period for any dispatched-IO work to complete, then
+            // disconnect LLM so the WebSocket isn't leaked.
+            delay(500L)
             llmService.disconnect()
             currentMode = "standby"
             return@LaunchedEffect
@@ -323,6 +327,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         }
         speak("Mode scan siap. Ucapkan mulai belajar untuk memulai.")
         delay(1000L)
+        if (!isPageActive) return@LaunchedEffect  // guard: page may have deactivated during delay
         if (!isLearningActive && lockedOrgan == null) {
             startLearningCommandLoop()
         }
@@ -337,6 +342,11 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
 
     DisposableEffect(Unit) {
         onDispose {
+            // Invalidate session token immediately so any lingering coroutine
+            // callbacks that captured `localSession` will see a mismatch and
+            // return early without touching disposed Compose state.
+            sessionToken += 1
+            isPageActive = false
             voiceHelper.destroy()
             llmService.disconnect()
             analyzer.close()

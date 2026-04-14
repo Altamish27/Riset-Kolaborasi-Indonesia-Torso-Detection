@@ -1,0 +1,361 @@
+--------- beginning of main
+04-14 13:53:49.017 23111 23111 I com.anatomy.app: Late-enabling -Xcheck:jni
+04-14 13:53:49.180 23111 23111 I com.anatomy.app: Using CollectorTypeCMC GC.
+04-14 13:53:49.188 23111 23111 W com.anatomy.app: Unexpected CPU variant for x86: x86_64.
+04-14 13:53:49.188 23111 23111 W com.anatomy.app: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+04-14 13:53:49.278 23111 23111 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+04-14 13:53:50.263 23111 23111 D nativeloader: Configuring clns-9 for other apk /data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk. target_sdk_version=35, uses_libraries=, library_path=/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/lib/x86_64:/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.anatomy.app
+04-14 13:53:50.275 23111 23111 D CompatChangeReporter: Compat change id reported: 202956589; UID 10230; state: ENABLED
+04-14 13:53:50.286 23111 23111 I com.anatomy.app: AssetManager2(0x7efb97457298) locale list changing from [] to [en-US]
+04-14 13:53:50.311 23111 23111 V GraphicsEnvironment: Currently set values for:
+04-14 13:53:50.311 23111 23111 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+04-14 13:53:50.311 23111 23111 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+04-14 13:53:50.311 23111 23111 V GraphicsEnvironment: com.anatomy.app is not listed in per-application setting
+04-14 13:53:50.313 23111 23111 V GraphicsEnvironment: ANGLE allowlist from config: com.dreamgames.royalmatch com.dts.freefiremax com.dxx.firenow com.gramgames.mergedragons com.ludo.king com.mojang.minecraftpe com.my.defense com.nintendo.zaka com.os.airforce com.playrix.fishdomdd.gplay io.teslatech.callbreak jp.konami.prospia net.peakgames.toonblast
+04-14 13:53:50.313 23111 23111 V GraphicsEnvironment: com.anatomy.app is not listed in ANGLE allowlist or settings, returning default
+04-14 13:53:50.313 23111 23111 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+04-14 13:53:50.412 23111 23111 D CompatChangeReporter: Compat change id reported: 279646685; UID 10230; state: ENABLED
+04-14 13:53:50.442 23111 23111 D AnatomyApp: AnatomyApp initializing...
+04-14 13:53:50.452 23111 23111 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+04-14 13:53:50.459 23111 23111 I com.anatomy.app: AssetManager2(0x7efb9745e958) locale list changing from [] to [en-US]
+04-14 13:53:50.466 23111 23111 I TextToSpeech: Sucessfully bound to com.google.android.tts
+04-14 13:53:51.176 23111 23129 D AnatomyApp: Syncing organs from API...
+04-14 13:53:51.176 23111 23129 D OrganService: Starting organ sync from API...
+04-14 13:53:51.177 23111 23129 W OrganService: API endpoint for organ list not yet implemented. Please add OrganListResponse and update ApiService, then implement this method.
+04-14 13:53:51.178 23111 23129 W AnatomyApp: Organ sync returned false - API endpoint may not be ready
+04-14 13:53:51.183 23111 23111 I Choreographer: Skipped 43 frames!  The application may be doing too much work on its main thread.
+--------- beginning of system
+04-14 13:53:51.193 23111 23131 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+04-14 13:53:51.210 23111 23111 I com.anatomy.app: AssetManager2(0x7efb9745d058) locale list changing from [] to [en-US]
+04-14 13:53:51.399 23111 23111 D CompatChangeReporter: Compat change id reported: 309578419; UID 10230; state: ENABLED
+04-14 13:53:51.402 23111 23111 D DesktopModeFlags: Toggle override initialized to: OVERRIDE_UNSET
+04-14 13:53:51.421 23111 23131 I EGL_emulation: Opening libGLESv1_CM_emulation.so
+04-14 13:53:51.422 23111 23131 I EGL_emulation: Opening libGLESv2_emulation.so
+04-14 13:53:51.472 23111 23131 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+04-14 13:53:51.472 23111 23131 W HWUI    : Failed to initialize 101010-2 format, error = EGL_SUCCESS
+04-14 13:53:51.521 23111 23111 D CompatChangeReporter: Compat change id reported: 352594277; UID 10230; state: ENABLED
+04-14 13:53:51.547 23111 23111 D CompatChangeReporter: Compat change id reported: 349153669; UID 10230; state: ENABLED
+04-14 13:53:51.557 23111 23111 W HWUI    : Unknown dataspace 0
+04-14 13:53:52.407 23111 23115 I com.anatomy.app: Compiler allocated 5042KB to compile void android.view.ViewRootImpl.performTraversals()
+04-14 13:53:52.705 23111 23111 I com.anatomy.app: hiddenapi: Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app) using reflection: allowed
+04-14 13:53:52.781 23111 23122 I TextToSpeech: Connected to TTS engine
+04-14 13:53:52.818 23111 23137 I TextToSpeech: Setting up the connection to TTS engine...
+04-14 13:53:53.794 23111 23111 D TFLiteAnalyzer: Metadata loaded: 16 kelas
+04-14 13:53:53.815 23111 23111 D TFLiteAnalyzer: Candidates model: best_model_torso_float16_416_nms.tflite, best_model_torso_416_fp16_nms.tflite, best_model_torso_float16_nms.tflite, best_model_torso_float16.tflite, best_model_float16.tflite, best_model_torso_float32.tflite
+04-14 13:53:53.816 23111 23111 D TFLiteAnalyzer: Model gagal load: best_model_torso_float16_416_nms.tflite (best_model_torso_float16_416_nms.tflite)
+04-14 13:53:53.816 23111 23111 D TFLiteAnalyzer: Model gagal load: best_model_torso_416_fp16_nms.tflite (best_model_torso_416_fp16_nms.tflite)
+04-14 13:53:53.817 23111 23111 D TFLiteAnalyzer: Model gagal load: best_model_torso_float16_nms.tflite (best_model_torso_float16_nms.tflite)
+04-14 13:53:53.861 23111 23111 D nativeloader: Load /data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!/lib/x86_64/libtensorflowlite_gpu_jni.so using class loader ns clns-9 (caller=/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!classes13.dex): ok
+04-14 13:53:53.871 23111 23111 E libEGL  : call to OpenGL ES API with no current context (logged once per thread)
+04-14 13:53:53.915 23111 23111 D TFLiteAnalyzer: GPU delegate tidak tersedia, langsung CPU
+04-14 13:53:53.928 23111 23111 D nativeloader: Load /data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!/lib/x86_64/libtensorflowlite_jni.so using class loader ns clns-9 (caller=/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!classes13.dex): ok
+04-14 13:53:53.929 23111 23111 I InterpreterApi: Loaded native library: tensorflowlite_jni
+04-14 13:53:53.931 23111 23111 D nativeloader: Load libtensorflowlite_jni_gms_client.so using class loader ns clns-9 (caller=/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!classes13.dex): dlopen failed: library "libtensorflowlite_jni_gms_client.so" not found
+04-14 13:53:53.931 23111 23111 I InterpreterApi: Didn't load native library: tensorflowlite_jni_gms_client
+04-14 13:53:53.933 23111 23111 I tflite  : Initialized TensorFlow Lite runtime.
+04-14 13:53:53.942 23111 23111 I tflite  : Created TensorFlow Lite XNNPACK delegate for CPU.
+04-14 13:53:53.988 23111 23111 I tflite  : Replacing 540 out of 548 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 9 partitions for the whole graph.
+04-14 13:53:54.034 23111 23111 D TFLiteAnalyzer: Model loaded: best_model_torso_float16.tflite, in=[1, 640, 640, 3] FLOAT32, out=[1, 20, 8400], conf=0.25
+04-14 13:53:54.919 23111 23111 D UnifiedWebSocketManager: Connecting to unified WebSocket...
+04-14 13:53:54.978 23111 23122 I HWUI    : Davey! duration=3372ms; Flags=1, FrameTimelineVsyncId=3186864, IntendedVsync=17145324270424, Vsync=17145340937090, InputEventId=0, HandleInputStart=17145348524700, AnimationStart=17145349708300, PerformTraversalsStart=17145349782100, DrawStart=17148466898200, FrameDeadline=17145340937090, FrameStartTime=17145348443700, FrameInterval=16666666, WorkloadTarget=16666666, SyncQueued=17148503811500, SyncStart=17148505395000, IssueDrawCommandsStart=17148505611400, SwapBuffers=17148645683500, FrameCompleted=17148698002500, DequeueBufferDuration=49500, QueueBufferDuration=773200, GpuCompleted=17148698002500, SwapBuffersCompleted=17148655416700, DisplayPresentTime=0, CommandSubmissionCompleted=17148645683500, 
+04-14 13:53:54.996 23111 23111 W AudioAssistant: TTS not initialized yet. Ignoring speak request.
+04-14 13:53:55.011 23111 23111 W AudioAssistant: TTS not initialized yet. Ignoring speak request.
+04-14 13:53:55.015 23111 23147 I okhttp.OkHttpClient: --> GET http://43.157.235.115:8000/ws/chat
+04-14 13:53:55.015 23111 23147 I okhttp.OkHttpClient: Upgrade: websocket
+04-14 13:53:55.015 23111 23147 I okhttp.OkHttpClient: Connection: Upgrade
+04-14 13:53:55.015 23111 23147 I okhttp.OkHttpClient: Sec-WebSocket-Key: uYQiUWd3UXWhoatuot1I5w==
+04-14 13:53:55.016 23111 23147 I okhttp.OkHttpClient: Sec-WebSocket-Version: 13
+04-14 13:53:55.016 23111 23147 I okhttp.OkHttpClient: Sec-WebSocket-Extensions: permessage-deflate
+04-14 13:53:55.016 23111 23147 I okhttp.OkHttpClient: --> END GET
+04-14 13:53:55.017 23111 23111 W AudioAssistant: TTS not initialized yet. Ignoring speak request.
+04-14 13:53:55.074 23111 23150 I okhttp.OkHttpClient: --> POST http://43.157.235.115:8000/auth/refresh
+04-14 13:53:55.074 23111 23150 I okhttp.OkHttpClient: Content-Type: application/json; charset=utf-8
+04-14 13:53:55.075 23111 23150 I okhttp.OkHttpClient: Content-Length: 106
+04-14 13:53:55.075 23111 23150 I okhttp.OkHttpClient: {"refresh_token":"Ps2qzKfmGo1f50zS41hse-z3aedu2C50IDS-bhuNj6DPUVRqMZp8YA_hqhWrHwVszjYKfgkEl0xsZyBGUu_aRA"}
+04-14 13:53:55.075 23111 23150 I okhttp.OkHttpClient: --> END POST (106-byte body)
+04-14 13:53:55.119 23111 23111 D QuirkSettingsLoader: QuirkSettings$MetadataHolderService is not found.
+04-14 13:53:55.119 23111 23111 D CameraX : QuirkSettings from app metadata: null
+04-14 13:53:55.129 23111 23111 D CameraX : QuirkSettings by default: QuirkSettings{enabledWhenDeviceHasQuirk=true, forceEnabledQuirks=[], forceDisabledQuirks=[]}
+04-14 13:53:55.201 23111 23111 I Choreographer: Skipped 204 frames!  The application may be doing too much work on its main thread.
+04-14 13:53:55.216 23111 23150 I okhttp.OkHttpClient: <-- 200 OK http://43.157.235.115:8000/auth/refresh (140ms)
+04-14 13:53:55.216 23111 23150 I okhttp.OkHttpClient: date: Tue, 14 Apr 2026 06:53:57 GMT
+04-14 13:53:55.216 23111 23150 I okhttp.OkHttpClient: server: uvicorn
+04-14 13:53:55.216 23111 23150 I okhttp.OkHttpClient: content-length: 165
+04-14 13:53:55.217 23111 23150 I okhttp.OkHttpClient: content-type: application/json
+04-14 13:53:55.221 23111 23150 I okhttp.OkHttpClient: {"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc3NjE1MTQzOH0.CvlQX-sPxDZD6uPz-jmv0APvdWa7pwwHfkQuyEL3LtM","token_type":"bearer"}
+04-14 13:53:55.222 23111 23150 I okhttp.OkHttpClient: <-- END HTTP (165-byte body)
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: <-- 101 Switching Protocols http://43.157.235.115:8000/ws/chat (241ms)
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: Upgrade: websocket
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: Connection: Upgrade
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: Sec-WebSocket-Accept: BmoA/Rv5v9Pwaddkh6OTDjd1ymw=
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: Sec-WebSocket-Extensions: permessage-deflate
+04-14 13:53:55.261 23111 23147 I okhttp.OkHttpClient: date: Tue, 14 Apr 2026 06:53:57 GMT
+04-14 13:53:55.266 23111 23147 I okhttp.OkHttpClient: server: uvicorn
+04-14 13:53:55.266 23111 23147 I okhttp.OkHttpClient: <-- END HTTP
+04-14 13:53:55.271 23111 23147 D UnifiedWebSocketClient: Unified WebSocket connected to: ws://43.157.235.115:8000/ws/chat
+04-14 13:53:55.298 23111 23122 I HWUI    : Davey! duration=3473ms; Flags=0, FrameTimelineVsyncId=3186887, IntendedVsync=17145557603748, Vsync=17148957603612, InputEventId=0, HandleInputStart=17148958514400, AnimationStart=17148958575100, PerformTraversalsStart=17148988955400, DrawStart=17148990081100, FrameDeadline=17148724270288, FrameStartTime=17148957713300, FrameInterval=16666666, WorkloadTarget=16666666, SyncQueued=17149001371200, SyncStart=17149001453100, IssueDrawCommandsStart=17149001644500, SwapBuffers=17149009341600, FrameCompleted=17149031667700, DequeueBufferDuration=52100, QueueBufferDuration=21174800, GpuCompleted=17149031148500, SwapBuffersCompleted=17149031667700, DisplayPresentTime=0, CommandSubmissionCompleted=17149009341600, 
+04-14 13:53:55.355 23111 23156 D DeviceQuirks: camera2 DeviceQuirks = CaptureSessionShouldUseMrirQuirk
+04-14 13:53:55.448 23111 23156 I CameraManagerGlobal: Connecting to camera service
+04-14 13:53:55.477 23111 23147 D UnifiedWebSocketClient: Unified authentication message sent
+04-14 13:53:55.534 23111 23156 D Camera2CameraCoordinator: Updated concurrent camera map: {}
+04-14 13:53:55.549 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"authenticated","username":"admin"}...
+04-14 13:53:55.554 23111 23147 D UnifiedWebSocketClient: Unified WebSocket authenticated successfully
+04-14 13:53:55.567 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: authenticated
+04-14 13:53:55.595 23111 23139 D CompatChangeReporter: Compat change id reported: 312399441; UID 10230; state: ENABLED
+04-14 13:53:55.601 23111 23156 D Camera2CameraFactory: Updated available camera list: [] -> [1, 10]
+04-14 13:53:55.616 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:53:55.617 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
+04-14 13:53:55.679 23111 23156 D CameraRepository: Added camera: 1
+04-14 13:53:55.744 23111 23156 D CameraQuirks: camera2 CameraQuirks = 
+04-14 13:53:55.765 23111 23111 D AudioAssistant: TTS initialized successfully with id-ID locale.
+04-14 13:53:55.789 23111 23111 D VoiceRecognition: Started listening.
+04-14 13:53:55.797 23111 23111 I Choreographer: Skipped 34 frames!  The application may be doing too much work on its main thread.
+04-14 13:53:55.829 23111 23111 D InsetsController: hide(ime(), fromIme=false)
+04-14 13:53:55.830 23111 23111 I ImeTracker: com.anatomy.app:a5db1352: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+04-14 13:53:55.913 23111 23156 I Camera2CameraInfo: Device Level: INFO_SUPPORTED_HARDWARE_LEVEL_FULL
+04-14 13:53:55.931 23111 23156 D CameraRepository: Added camera: 10
+04-14 13:53:55.932 23111 23156 D CameraQuirks: camera2 CameraQuirks = 
+04-14 13:53:55.934 23111 23156 I Camera2CameraInfo: Device Level: INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED
+04-14 13:53:55.943 23111 23156 I CameraPresencePrvdr: Starting CameraPresenceProvider monitoring.
+04-14 13:53:55.943 23111 23156 I CameraPresenceSrc: First observer added. Starting monitoring.
+04-14 13:53:55.943 23111 23156 I Camera2PresenceSrc: Starting system availability monitoring.
+04-14 13:53:55.948 23111 23163 D Camera2PresenceSrc: System onCameraAvailable: 1
+04-14 13:53:55.952 23111 23163 D Camera2PresenceSrc: System onCameraAvailable: 10
+04-14 13:53:55.953 23111 23163 D Camera2PresenceSrc: [FetchData] Refreshed camera list: CameraIdentifier{cameraIds=1}, CameraIdentifier{cameraIds=10}
+04-14 13:53:55.955 23111 23163 D Camera2PresenceSrc: [FetchData] Refreshed camera list: CameraIdentifier{cameraIds=1}, CameraIdentifier{cameraIds=10}
+04-14 13:53:55.959 23111 23163 D Camera2PresenceSrc: [FetchData] Refreshed camera list: CameraIdentifier{cameraIds=1}, CameraIdentifier{cameraIds=10}
+04-14 13:53:55.962 23111 23156 D CameraValidator: Verifying camera lens facing on emu64xa, lensFacingInteger: null
+04-14 13:53:56.047 23111 23111 D DeviceQuirks: core DeviceQuirks = SurfaceOrderQuirk
+04-14 13:53:56.067 23111 23111 D ResolvedFeatureGroup: resolveFeatureGroup: sessionConfig = androidx.camera.core.LegacySessionConfig@caab422, lensFacing = 1
+04-14 13:53:56.069 23111 23111 D CameraUseCaseAdapter: addUseCases: appUseCasesToAdd = [Preview:androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff689, ImageAnalysis:androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c], featureGroup = null
+04-14 13:53:56.105 23111 23111 D UseCase : applyFeaturesToConfig: mFeatureGroup = null, this = Preview:androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff689
+04-14 13:53:56.285 23111 23111 D SupportedOutputSizesCollector: useCaseConfig = androidx.camera.core.impl.PreviewConfig@bdd3eb3, candidateSizes = [1280x960, 1280x720, 640x480, 352x288, 320x240]
+04-14 13:53:56.290 23111 23111 D UseCase : applyFeaturesToConfig: mFeatureGroup = null, this = ImageAnalysis:androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c
+04-14 13:53:56.296 23111 23111 D DynamicRangeResolver: Resolved dynamic range for use case androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff689 to no compatible HDR dynamic ranges.
+04-14 13:53:56.296 23111 23111 D DynamicRangeResolver: DynamicRange@463130f{encoding=UNSPECIFIED, bitDepth=0}
+04-14 13:53:56.296 23111 23111 D DynamicRangeResolver: ->
+04-14 13:53:56.296 23111 23111 D DynamicRangeResolver: DynamicRange@1e3f06e{encoding=SDR, bitDepth=8}
+04-14 13:53:56.296 23111 23111 D SupportedSurfaceCombination: resolvedDynamicRanges = {androidx.camera.core.impl.ImageAnalysisConfig@c987be9=DynamicRange@1e3f06e{encoding=SDR, bitDepth=8}, androidx.camera.core.impl.PreviewConfig@bdd3eb3=DynamicRange@1e3f06e{encoding=SDR, bitDepth=8}}
+04-14 13:53:56.296 23111 23111 D SupportedSurfaceCombination: getSuggestedStreamSpecifications: isPreviewStabilizationOn = false, mIsPreviewStabilizationSupported = false, isFeatureComboInvocation = false
+04-14 13:53:56.310 23111 23111 D SupportedSurfaceCombination: resolveSpecsByCheckingMethod: checkingMethod = WITHOUT_FEATURE_COMBO
+04-14 13:53:56.313 23111 23111 D SupportedSurfaceCombination: resolveSpecsBySettings: featureSettings = FeatureSettings{getCameraMode=0, hasVideoCapture=false, getRequiredMaxBitDepth=8, isPreviewStabilizationOn=false, isUltraHdrOn=false, isHighSpeedOn=false, isFeatureComboInvocation=false, requiresFeatureComboQuery=false, getTargetFpsRange=[0, 0], isStrictFpsRequired=false}
+04-14 13:53:56.317 23111 23111 D CameraQuirks: camera2 CameraQuirks = 
+04-14 13:53:56.317 23111 23111 D CameraQuirks: camera2 CameraQuirks = 
+04-14 13:53:56.330 23111 23111 D SupportedSurfaceCombination: resolveSpecsBySettings: bestSizesAndFps = BestSizesAndMaxFpsForConfigs{bestSizes=[1280x960, 640x480], bestSizesForStreamUseCase=null, maxFpsForBestSizes=30, maxFpsForStreamUseCase=2147483647, maxFpsForAllSizes=2147483647}
+04-14 13:53:56.346 23111 23111 D UseCase : applyFeaturesToConfig: mFeatureGroup = null, this = Preview:androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff689
+04-14 13:53:56.347 23111 23111 D Preview : onSuggestedStreamSpecUpdated: primaryStreamSpec = StreamSpec{resolution=1280x960, originalConfiguredResolution=1280x960, dynamicRange=DynamicRange@1e3f06e{encoding=SDR, bitDepth=8}, sessionType=0, expectedFrameRateRange=[0, 0], implementationOptions=androidx.camera.camera2.impl.Camera2ImplConfig@8115988, zslDisabled=false}, secondaryStreamSpec null
+04-14 13:53:56.383 23111 23111 D DeferrableSurface: Surface created[total_surfaces=1, used_surfaces=0](androidx.camera.core.processing.SurfaceEdge$SettableSurface@fdabf21}
+04-14 13:53:56.410 23111 23111 D DeferrableSurface: Surface created[total_surfaces=2, used_surfaces=0](androidx.camera.core.SurfaceRequest$2@1832c5d}
+04-14 13:53:56.413 23111 23111 D DeferrableSurface: New surface in use[total_surfaces=2, used_surfaces=1](androidx.camera.core.SurfaceRequest$2@1832c5d}
+04-14 13:53:56.414 23111 23111 D DeferrableSurface: use count+1, useCount=1 androidx.camera.core.SurfaceRequest$2@1832c5d
+04-14 13:53:56.443 23111 23111 D UseCase : applyFeaturesToConfig: mFeatureGroup = null, this = ImageAnalysis:androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c
+04-14 13:53:56.444 23111 23111 D ImageAnalysis: onSuggestedStreamSpecUpdated: primaryStreamSpec = StreamSpec{resolution=640x480, originalConfiguredResolution=640x480, dynamicRange=DynamicRange@1e3f06e{encoding=SDR, bitDepth=8}, sessionType=0, expectedFrameRateRange=[0, 0], implementationOptions=androidx.camera.camera2.impl.Camera2ImplConfig@3e3511e, zslDisabled=false}, secondaryStreamSpec null
+04-14 13:53:56.465 23111 23111 D DeferrableSurface: Surface created[total_surfaces=3, used_surfaces=1](androidx.camera.core.impl.ImmediateSurface@5b4ddff}
+04-14 13:53:56.467 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use case androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094 ACTIVE
+04-14 13:53:56.474 23111 23111 D CameraPreview: Camera bound successfully.
+04-14 13:53:56.475 23111 23111 I Choreographer: Skipped 30 frames!  The application may be doing too much work on its main thread.
+04-14 13:53:56.478 23111 23163 D UseCaseAttachState: Active and attached use case: [] for camera: 10
+04-14 13:53:56.480 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use case androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975 ACTIVE
+04-14 13:53:56.481 23111 23163 D UseCaseAttachState: Active and attached use case: [] for camera: 10
+04-14 13:53:56.481 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use cases [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] now ATTACHED
+04-14 13:53:56.482 23111 23163 D Camera2CameraControlImp: setActive: isActive = true
+04-14 13:53:56.482 23111 23163 D UseCaseAttachState: All use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.483 23111 23163 D UseCaseAttachState: Active and attached use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.485 23111 23111 D VoiceRecognition: Ready for speech...
+04-14 13:53:56.487 23111 23111 D PreviewView: Surface requested by Preview.
+04-14 13:53:56.487 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Resetting Capture Session
+04-14 13:53:56.489 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Skipping Capture Session state check due to current camera state: INITIALIZED and previous session status: false
+04-14 13:53:56.490 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Releasing session in state INITIALIZED
+04-14 13:53:56.491 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Attempting to force open the camera.
+04-14 13:53:56.492 23111 23163 D CameraStateRegistry: tryOpenCamera(Camera@b68a610[id=10]) [Available Cameras: 1, Already Open: false (Previous state: null)] --> SUCCESS
+04-14 13:53:56.493 23111 23111 D DeviceQuirks: view DeviceQuirks = 
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: Recalculating open cameras:
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: Camera                                       State                 
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: Camera@ae94cd1[id=1]                         UNKNOWN               
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: Camera@b68a610[id=10]                        OPENING               
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:53:56.493 23111 23163 D CameraStateRegistry: Open count: 1 (Max allowed: 1)
+04-14 13:53:56.494 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Opening camera.
+04-14 13:53:56.494 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Transitioning camera internal state: INITIALIZED --> OPENING
+04-14 13:53:56.495 23111 23163 D CameraStateMachine: New public camera state CameraState{type=OPENING, error=null} from OPENING and null
+04-14 13:53:56.495 23111 23163 D CameraStateMachine: Publishing new public camera state CameraState{type=OPENING, error=null}
+04-14 13:53:56.496 23111 23163 D UseCaseAttachState: All use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.536 23111 23156 D Camera2PresenceSrc: System onCameraUnavailable: 10
+04-14 13:53:56.537 23111 23156 D Camera2PresenceSrc: [FetchData] Refreshed camera list: CameraIdentifier{cameraIds=1}, CameraIdentifier{cameraIds=10}
+04-14 13:53:56.546 23111 23111 D PreviewView: Preview transformation info updated. TransformationInfo{getCropRect=Rect(0, 0 - 1280, 960), getRotationDegrees=90, getTargetRotation=-1, hasCameraTransform=true, getSensorToBufferTransform=Matrix{[1.0, 0.0, 0.0][0.0, 1.0, 0.0][0.0, 0.0, 1.0]}, isMirroring=false}
+04-14 13:53:56.550 23111 23111 D PreviewTransform: Transformation info set: TransformationInfo{getCropRect=Rect(0, 0 - 1280, 960), getRotationDegrees=90, getTargetRotation=-1, hasCameraTransform=true, getSensorToBufferTransform=Matrix{[1.0, 0.0, 0.0][0.0, 1.0, 0.0][0.0, 0.0, 1.0]}, isMirroring=false} 1280x960 false
+04-14 13:53:56.563 23111 23111 D SurfaceViewImpl: Wait for new Surface creation.
+04-14 13:53:56.598 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use case androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094 ACTIVE
+04-14 13:53:56.598 23111 23163 D UseCaseAttachState: Active and attached use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.600 23111 23111 D SurfaceViewImpl: Surface created.
+04-14 13:53:56.600 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use case androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975 ACTIVE
+04-14 13:53:56.601 23111 23163 D UseCaseAttachState: Active and attached use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.601 23111 23111 D SurfaceViewImpl: Surface changed. Size: 1280x960
+04-14 13:53:56.601 23111 23111 D SurfaceViewImpl: Surface set on Preview.
+04-14 13:53:56.603 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} CameraDevice.onOpened()
+04-14 13:53:56.603 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Transitioning camera internal state: OPENING --> OPENED
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: Recalculating open cameras:
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: Camera                                       State                 
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: Camera@ae94cd1[id=1]                         UNKNOWN               
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: Camera@b68a610[id=10]                        OPEN                  
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:53:56.603 23111 23163 D CameraStateRegistry: Open count: 1 (Max allowed: 1)
+04-14 13:53:56.603 23111 23163 D CameraStateMachine: New public camera state CameraState{type=OPEN, error=null} from OPEN and null
+04-14 13:53:56.603 23111 23163 D CameraStateMachine: Publishing new public camera state CameraState{type=OPEN, error=null}
+04-14 13:53:56.603 23111 23163 D UseCaseAttachState: All use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.603 23111 23163 D StreamUseCaseUtil: populateSurfaceToStreamUseCaseMapping() - streamUseCaseMap = {}
+04-14 13:53:56.639 23111 23163 D UseCaseAttachState: Active and attached use case: [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] for camera: 10
+04-14 13:53:56.641 23111 23163 D SyncCaptureSessionBase: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] getSurface done with results: [Surface(name=null mNativeObject=139618234724016)/@0x94744ef, Surface(name=null mNativeObject=139618234709184)/@0xdac683]
+04-14 13:53:56.642 23111 23163 D CaptureSession: Opening capture session.
+04-14 13:53:56.695 23111 23163 D Camera2CaptureRequestBuilder: template type = 1
+04-14 13:53:56.709 23111 23163 D Camera2CaptureRequestBuilder: applyAeFpsRange: expectedFrameRateRange = [0, 0]
+04-14 13:53:56.714 23111 23163 D SyncCaptureSessionImpl: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] start openCaptureSession
+04-14 13:53:56.722 23111 23163 D DeferrableSurface: use count+1, useCount=2 androidx.camera.core.SurfaceRequest$2@1832c5d
+04-14 13:53:56.723 23111 23163 D DeferrableSurface: New surface in use[total_surfaces=3, used_surfaces=2](androidx.camera.core.impl.ImmediateSurface@5b4ddff}
+04-14 13:53:56.734 23111 23163 D DeferrableSurface: use count+1, useCount=1 androidx.camera.core.impl.ImmediateSurface@5b4ddff
+04-14 13:53:57.323 23111 23163 D SyncCaptureSessionImpl: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] Session onConfigured()
+04-14 13:53:57.325 23111 23163 D CaptureSession: Attempting to send capture request onConfigured
+04-14 13:53:57.325 23111 23163 D CaptureSession: Issuing request for session.
+04-14 13:53:57.325 23111 23186 D ProfileInstaller: Installing profile for com.anatomy.app
+04-14 13:53:57.326 23111 23163 D Camera2CaptureRequestBuilder: createCaptureRequest
+04-14 13:53:57.327 23111 23163 D Camera2CaptureRequestBuilder: applyAeFpsRange: expectedFrameRateRange = [0, 0]
+04-14 13:53:57.328 23111 23163 D Camera2CaptureRequestBuilder: applyVideoStabilization: mode = null
+04-14 13:53:57.338 23111 23163 D CaptureSession: CameraCaptureSession.onConfigured() mState=OPENED
+04-14 13:53:57.343 23111 23163 D CaptureSession: CameraCaptureSession.onReady() OPENED
+04-14 13:53:57.555 23111 23187 D nativeloader: Load /data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk!/lib/x86_64/libimage_processing_util_jni.so using class loader ns clns-9 (caller=/data/app/~~kQcIg1s95NpYwJ6IV7S7_Q==/com.anatomy.app-kdThqNwqt0OiO935nSVIYw==/base.apk): ok
+04-14 13:53:57.580 23111 23156 D StreamStateObserver: Update Preview stream state to STREAMING
+04-14 13:53:59.509 23111 23116 W com.anatomy.app: Suspending all threads took: 23.096ms
+04-14 13:53:59.593 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:53:59.594 23111 23189 D TFLiteAnalyzer: Summary: frames=1, hit=0, fps=0.3, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:53:59.761 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 9153KB AllocSpace bytes, 7(8912KB) LOS objects, 49% free, 12MB/24MB, paused 28.060ms,16.119ms total 573.944ms
+04-14 13:54:00.620 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:54:00.621 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
+04-14 13:54:01.570 23111 23116 W com.anatomy.app: Suspending all threads took: 16.071ms
+04-14 13:54:01.591 23111 23111 E VoiceRecognition: Recognition error: 7
+04-14 13:54:01.850 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1033KB AllocSpace bytes, 23(8332KB) LOS objects, 50% free, 18MB/36MB, paused 31.358ms,7.386ms total 595.197ms
+04-14 13:54:01.890 23111 23111 D VoiceRecognition: Started listening.
+04-14 13:54:02.191 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:02.191 23111 23189 D TFLiteAnalyzer: Summary: frames=2, hit=0, fps=0.5, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:02.547 23111 23111 D VoiceRecognition: Ready for speech...
+04-14 13:54:02.821 23111 23115 I com.anatomy.app: Compiler allocated 4831KB to compile void com.anatomy.app.ui.screen.ScanAnatomyScreenKt.ScanAnatomyScreen(boolean, androidx.compose.runtime.Composer, int, int)
+04-14 13:54:04.452 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:04.452 23111 23189 D TFLiteAnalyzer: Summary: frames=3, hit=0, fps=0.4, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:05.256 23111 23116 W com.anatomy.app: Suspending all threads took: 13.080ms
+04-14 13:54:05.590 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1390KB AllocSpace bytes, 48(25MB) LOS objects, 50% free, 15MB/31MB, paused 34.636ms,33.014ms total 670.766ms
+04-14 13:54:05.679 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:54:05.680 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
+04-14 13:54:06.577 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:06.577 23111 23189 D TFLiteAnalyzer: Summary: frames=4, hit=0, fps=0.5, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:07.249 23111 23116 W com.anatomy.app: Suspending all threads took: 18.802ms
+04-14 13:54:07.418 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1197KB AllocSpace bytes, 27(16MB) LOS objects, 49% free, 18MB/36MB, paused 23.437ms,8.874ms total 451.042ms
+04-14 13:54:07.754 23111 23111 E VoiceRecognition: Recognition error: 7
+04-14 13:54:07.933 23111 23111 D VoiceRecognition: Started listening.
+04-14 13:54:08.357 23111 23111 D VoiceRecognition: Ready for speech...
+04-14 13:54:08.985 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:08.985 23111 23189 D TFLiteAnalyzer: Summary: frames=6, hit=0, fps=0.8, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:09.411 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1029KB AllocSpace bytes, 49(26MB) LOS objects, 49% free, 19MB/38MB, paused 18.628ms,23.364ms total 379.556ms
+04-14 13:54:10.715 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:54:10.716 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
+04-14 13:54:10.833 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 773KB AllocSpace bytes, 51(29MB) LOS objects, 49% free, 18MB/36MB, paused 18.567ms,10.899ms total 465.545ms
+04-14 13:54:11.011 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:11.011 23111 23189 D TFLiteAnalyzer: Summary: frames=9, hit=0, fps=1.5, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:12.462 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1181KB AllocSpace bytes, 50(31MB) LOS objects, 50% free, 14MB/29MB, paused 22.973ms,25.677ms total 456.214ms
+04-14 13:54:13.546 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 684KB AllocSpace bytes, 27(16MB) LOS objects, 49% free, 12MB/24MB, paused 13.465ms,31.497ms total 515.548ms
+04-14 13:54:13.659 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:13.675 23111 23189 D TFLiteAnalyzer: Summary: frames=12, hit=0, fps=1.3, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:13.743 23111 23111 E VoiceRecognition: Recognition error: 7
+04-14 13:54:14.036 23111 23116 W com.anatomy.app: Suspending all threads took: 25.255ms
+04-14 13:54:14.135 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 604KB AllocSpace bytes, 23(8332KB) LOS objects, 50% free, 18MB/36MB, paused 43.299ms,25.304ms total 329.153ms
+04-14 13:54:15.695 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:54:15.695 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
+04-14 13:54:16.129 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 1105KB AllocSpace bytes, 49(26MB) LOS objects, 49% free, 19MB/38MB, paused 5.677ms,8.114ms total 434.065ms
+04-14 13:54:16.540 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:16.541 23111 23189 D TFLiteAnalyzer: Summary: frames=15, hit=0, fps=1.0, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:17.797 23111 23116 I com.anatomy.app: Background concurrent mark compact GC freed 925KB AllocSpace bytes, 50(28MB) LOS objects, 50% free, 19MB/38MB, paused 19.614ms,30.509ms total 309.639ms
+04-14 13:54:18.819 23111 23189 D TFLiteAnalyzer: Tensor: shape=[1,20,8400], classes=16
+04-14 13:54:18.819 23111 23189 D TFLiteAnalyzer: Summary: frames=19, hit=0, fps=1.6, model=best_model_torso_float16.tflite, thr=0.25, state=no_objects
+04-14 13:54:19.208 23111 23111 I com.anatomy.app: hiddenapi: Accessing hidden method Landroid/view/ViewTreeObserver;->dispatchOnScrollChanged()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app) using reflection: allowed
+04-14 13:54:19.221 23111 23111 D ChatRepository: Chat disconnect requested - unified connection remains active
+04-14 13:54:19.249 23111 23111 I Choreographer: Skipped 72 frames!  The application may be doing too much work on its main thread.
+04-14 13:54:19.619 23111 23111 D VoiceRecognition: Stopped listening.
+04-14 13:54:19.625 23111 23111 D ChatRepository: Using existing unified WebSocket connection
+04-14 13:54:19.625 23111 23111 D QnaScreen: WebSocket already authenticated, setting isAuthenticated=true
+04-14 13:54:19.672 23111 23235 I okhttp.OkHttpClient: --> POST http://43.157.235.115:8000/chat/sessions
+04-14 13:54:19.673 23111 23235 I okhttp.OkHttpClient: Content-Length: 0
+04-14 13:54:19.673 23111 23235 I okhttp.OkHttpClient: --> END POST (0-byte body)
+04-14 13:54:19.675 23111 23222 I HWUI    : Davey! duration=1627ms; Flags=0, FrameTimelineVsyncId=3197342, IntendedVsync=17171790936032, Vsync=17172990935984, InputEventId=822015291, HandleInputStart=17173007103200, AnimationStart=17173007904400, PerformTraversalsStart=17173036661100, DrawStart=17173036975800, FrameDeadline=17171890936028, FrameStartTime=17173005911000, FrameInterval=16666666, WorkloadTarget=16666666, SyncQueued=17173070761300, SyncStart=17173070864800, IssueDrawCommandsStart=17173071063600, SwapBuffers=17173367612200, FrameCompleted=17173418151700, DequeueBufferDuration=32700, QueueBufferDuration=618800, GpuCompleted=17173418151700, SwapBuffersCompleted=17173369757300, DisplayPresentTime=0, CommandSubmissionCompleted=17173367612200, 
+04-14 13:54:19.721 23111 23235 I okhttp.OkHttpClient: <-- 200 OK http://43.157.235.115:8000/chat/sessions (46ms)
+04-14 13:54:19.721 23111 23235 I okhttp.OkHttpClient: date: Tue, 14 Apr 2026 06:54:22 GMT
+04-14 13:54:19.722 23111 23235 I okhttp.OkHttpClient: server: uvicorn
+04-14 13:54:19.722 23111 23235 I okhttp.OkHttpClient: content-length: 53
+04-14 13:54:19.722 23111 23235 I okhttp.OkHttpClient: content-type: application/json
+04-14 13:54:19.724 23111 23235 I okhttp.OkHttpClient: {"session_id":"4118e176-eb3c-4eb3-8b83-6cc9dc0a06d1"}
+04-14 13:54:19.724 23111 23235 I okhttp.OkHttpClient: <-- END HTTP (53-byte body)
+04-14 13:54:19.743 23111 23111 D SurfaceViewImpl: Surface destroyed.
+04-14 13:54:19.743 23111 23111 D SurfaceViewImpl: Surface closed androidx.camera.core.SurfaceRequest@4268634
+04-14 13:54:19.744 23111 23111 D DeferrableSurface: surface closed,  useCount=2 closed=true androidx.camera.core.SurfaceRequest$2@1832c5d
+04-14 13:54:19.765 23111 23111 D LLMService: LLM service cleanup completed
+--------- beginning of crash
+04-14 13:54:19.786 23111 23189 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x140 in tid 23189 (pool-4-thread-1), pid 23111 (com.anatomy.app)
+04-14 13:54:19.854 23111 23111 D VoiceRecognition: Stopped listening.
+04-14 13:54:19.856 23111 23120 E BufferQueueProducer: [e91e464 SurfaceView[com.anatomy.app/com.anatomy.app.MainActivity]#1(BLAST Consumer)1](id:5a4700000003,api:4,p:606,c:23111) dequeueBuffer: BufferQueue has been abandoned
+04-14 13:54:19.858 23111 23111 D DeferrableSurface: surface closed,  useCount=0 closed=true androidx.camera.core.processing.SurfaceEdge$SettableSurface@fdabf21
+04-14 13:54:19.858 23111 23111 D DeferrableSurface: Surface terminated[total_surfaces=2, used_surfaces=2](androidx.camera.core.processing.SurfaceEdge$SettableSurface@fdabf21}
+04-14 13:54:19.858 23111 23111 D DeferrableSurface: use count-1,  useCount=1 closed=true androidx.camera.core.SurfaceRequest$2@1832c5d
+04-14 13:54:19.859 23111 23111 D DeferrableSurface: surface closed,  useCount=1 closed=true androidx.camera.core.impl.ImmediateSurface@5b4ddff
+04-14 13:54:19.862 23111 23111 D CameraPreview: Camera unbound.
+04-14 13:54:19.864 23111 23111 D VoiceRecognition: Stopped listening.
+04-14 13:54:19.871 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Use cases [androidx.camera.core.Preview-b5b6dac1-4242-4d9c-b9ae-c57dafdff68943333094, androidx.camera.core.ImageAnalysis-dd5a0cf6-6fac-47b8-b725-7aad926ac11c98055975] now DETACHED for camera
+04-14 13:54:19.871 23111 23163 D UseCaseAttachState: All use case: [] for camera: 10
+04-14 13:54:19.873 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Resetting Capture Session
+04-14 13:54:19.875 23111 23163 D SyncCaptureSessionImpl: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] Session call close()
+04-14 13:54:19.877 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Releasing session in state OPENED
+04-14 13:54:19.878 23111 23163 D Camera2CameraControlImp: setActive: isActive = false
+04-14 13:54:19.879 23111 23163 D UseCaseAttachState: Active and attached use case: [] for camera: 10
+04-14 13:54:19.881 23111 23163 D UseCaseAttachState: Active and attached use case: [] for camera: 10
+04-14 13:54:19.882 23111 23163 D VideoUsageControl: resetDirectly: mVideoUsage reset!
+04-14 13:54:19.884 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Closing camera.
+04-14 13:54:19.885 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Transitioning camera internal state: OPENED --> CLOSING
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: Recalculating open cameras:
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: Camera                                       State                 
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: Camera@ae94cd1[id=1]                         UNKNOWN               
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: Camera@b68a610[id=10]                        CLOSING               
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:54:19.887 23111 23163 D CameraStateRegistry: Open count: 1 (Max allowed: 1)
+04-14 13:54:19.888 23111 23163 D CameraStateMachine: New public camera state CameraState{type=CLOSING, error=null} from CLOSING and null
+04-14 13:54:19.888 23111 23163 D CameraStateMachine: Publishing new public camera state CameraState{type=CLOSING, error=null}
+04-14 13:54:19.889 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Resetting Capture Session
+04-14 13:54:19.890 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Skipping Capture Session state check due to current camera state: CLOSING and previous session status: false
+04-14 13:54:19.893 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Releasing session in state CLOSING
+04-14 13:54:19.893 23111 23163 D SyncCaptureSessionImpl: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] Session call super.close()
+04-14 13:54:19.898 23111 23163 D UseCaseAttachState: Active and attached use case: [] for camera: 10
+04-14 13:54:19.901 23111 23163 D CaptureSession: onSessionFinished()
+04-14 13:54:19.905 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} closing camera
+04-14 13:54:19.913 23111 23111 D VoiceRecognition: VoiceRecognitionHelper destroyed.
+04-14 13:54:19.922 23111 23111 D StreamStateObserver: Update Preview stream state to IDLE
+04-14 13:54:19.967 23111 23156 D Camera2PresenceSrc: System onCameraAvailable: 10
+04-14 13:54:19.969 23111 23163 D SyncCaptureSessionImpl: [androidx.camera.camera2.internal.SynchronizedCaptureSessionImpl@1f4a000] onClosed()
+04-14 13:54:19.969 23111 23163 D DeferrableSurface: use count-1,  useCount=0 closed=true androidx.camera.core.SurfaceRequest$2@1832c5d
+04-14 13:54:19.969 23111 23163 D DeferrableSurface: Surface no longer in use[total_surfaces=2, used_surfaces=1](androidx.camera.core.SurfaceRequest$2@1832c5d}
+04-14 13:54:19.970 23111 23163 D DeferrableSurface: Surface terminated[total_surfaces=1, used_surfaces=1](androidx.camera.core.SurfaceRequest$2@1832c5d}
+04-14 13:54:19.972 23111 23163 D DeferrableSurface: use count-1,  useCount=0 closed=true androidx.camera.core.impl.ImmediateSurface@5b4ddff
+04-14 13:54:19.972 23111 23163 D DeferrableSurface: Surface no longer in use[total_surfaces=1, used_surfaces=0](androidx.camera.core.impl.ImmediateSurface@5b4ddff}
+04-14 13:54:19.972 23111 23163 D DeferrableSurface: Surface terminated[total_surfaces=0, used_surfaces=0](androidx.camera.core.impl.ImmediateSurface@5b4ddff}
+04-14 13:54:19.973 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} CameraDevice.onClosed()
+04-14 13:54:19.973 23111 23163 D Camera2CameraImpl: {Camera@b68a610[id=10]} Transitioning camera internal state: CLOSING --> INITIALIZED
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: Recalculating open cameras:
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: Camera                                       State                 
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: Camera@ae94cd1[id=1]                         UNKNOWN               
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: Camera@b68a610[id=10]                        CLOSED                
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: -------------------------------------------------------------------
+04-14 13:54:19.974 23111 23163 D CameraStateRegistry: Open count: 0 (Max allowed: 1)
+04-14 13:54:19.974 23111 23163 D CameraStateMachine: New public camera state CameraState{type=CLOSED, error=null} from CLOSED and null
+04-14 13:54:19.974 23111 23163 D CameraStateMachine: Publishing new public camera state CameraState{type=CLOSED, error=null}
+04-14 13:54:19.974 23111 23111 D SurfaceViewImpl: Safe to release surface.
+04-14 13:54:19.975 23111 23156 D Camera2PresenceSrc: [FetchData] Refreshed camera list: CameraIdentifier{cameraIds=1}, CameraIdentifier{cameraIds=10}
+04-14 13:54:20.682 23111 23147 D UnifiedWebSocketClient: Received unified WebSocket message: {"action":"pong"}...
+04-14 13:54:20.683 23111 23147 D UnifiedWebSocketClient: Parsed unified response action: pong
