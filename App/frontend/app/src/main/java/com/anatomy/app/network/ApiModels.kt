@@ -55,7 +55,8 @@ data class ChatResponse(
     val assistant_message: JsonElement? = null,
     val sessions: List<JsonElement>? = null,
     val messages: List<JsonElement>? = null,
-    val error: String? = null
+    val error: String? = null,
+    val game_data: JsonElement? = null
 )
 
 /**
