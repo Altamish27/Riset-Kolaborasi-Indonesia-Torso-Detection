@@ -85,7 +85,7 @@ fun MainPagerScreen() {
     val chatRepository = remember { ChatRepository(context) }
     val chatViewModel = remember { ChatViewModel(chatRepository) }
     val quizRepository = remember { QuizRepository(apiService, context) }
-    val quizViewModel = remember { QuizViewModel(quizRepository) }
+    val quizViewModel = remember { QuizViewModel(quizRepository, chatRepository) }
 
     var fabMode by remember { mutableStateOf("voice") }
     var showOnboarding by remember { mutableStateOf(isFirstLaunch(context)) }

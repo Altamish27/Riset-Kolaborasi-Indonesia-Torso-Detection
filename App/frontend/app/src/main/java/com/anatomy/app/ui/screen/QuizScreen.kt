@@ -1,6 +1,8 @@
 package com.anatomy.app.ui.screen
 
+import android.content.Context
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +71,7 @@ import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import com.anatomy.app.ui.theme.NeonMagenta
 import com.anatomy.app.ui.theme.SurfaceCard
+import com.anatomy.app.viewmodel.QuizEntryState
 import com.anatomy.app.viewmodel.QuizStatus
 import com.anatomy.app.viewmodel.QuizViewModel
 import kotlinx.coroutines.launch
@@ -85,10 +88,18 @@ fun QuizScreen(
     val errorMsg by quizViewModel.error.collectAsState()
 
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
+    val accessibilityManager = remember {
+        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+    }
+
+    val isAccessibilityMode =
+        (accessibilityManager?.isEnabled == true && accessibilityManager.isTouchExplorationEnabled) ||
+            AudioAssistant.isVoiceOn
 
     var topicInput by remember { mutableStateOf("anatomi torso") }
     var isListening by remember { mutableStateOf(false) }
     var voiceStatus by remember { mutableStateOf("Mode suara siap") }
+    var decisionPromptPlayed by remember { mutableStateOf(false) }
 
     fun startListeningAnswer() {
         if (!isActive || uiState.status != QuizStatus.PLAYING || isListening) return
@@ -132,11 +143,86 @@ fun QuizScreen(
         )
     }
 
+    fun startListeningDecision() {
+        if (!isActive || uiState.entryState != QuizEntryState.DECISION || isListening || isLoading) {
+            return
+        }
+
+        AudioAssistant.stop()
+        isListening = true
+        voiceStatus = "🎤 Ucapkan: Sesi Chat atau Topik Baru"
+
+        voiceHelper.startListening(
+            onResult = { spokenText ->
+                isListening = false
+                val spoken = spokenText.lowercase().trim()
+                when {
+                    spoken.contains("sesi chat") ||
+                        (spoken.contains("sesi") && spoken.contains("chat")) ||
+                        spoken.contains("diskusi") -> {
+                        if (isAccessibilityMode) HapticHelper.longBuzz() else HapticHelper.shortBuzz()
+                        coroutineScope.launch {
+                            quizViewModel.startQuizFromChatHistory()
+                        }
+                    }
+
+                    spoken.contains("topik baru") || spoken.contains("topik") -> {
+                        if (isAccessibilityMode) HapticHelper.doubleBuzz() else HapticHelper.shortBuzz()
+                        quizViewModel.chooseCustomTopicEntry()
+                        voiceStatus = "Masukkan topik baru"
+                    }
+
+                    else -> {
+                        HapticHelper.doubleBuzz()
+                        AudioAssistant.speak("Pilihan belum dikenali. Ucapkan Sesi Chat atau Topik Baru.")
+                        AudioAssistant.onUtteranceCompleted = {
+                            if (isActive && uiState.entryState == QuizEntryState.DECISION) {
+                                startListeningDecision()
+                            }
+                        }
+                    }
+                }
+            },
+            onError = { code ->
+                isListening = false
+                voiceStatus = "Error mikrofon: $code"
+                HapticHelper.doubleBuzz()
+            }
+        )
+    }
+
     LaunchedEffect(Unit) {
         quizViewModel.observePendingQuiz(coroutineScope)
     }
 
-    // After question TTS finishes, immediately open voice input.
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            quizViewModel.evaluateEntryDecision()
+        } else {
+            isListening = false
+            AudioAssistant.onUtteranceCompleted = null
+        }
+    }
+
+    LaunchedEffect(uiState.entryState, isActive) {
+        if (!isActive || uiState.entryState != QuizEntryState.DECISION) {
+            decisionPromptPlayed = false
+            return@LaunchedEffect
+        }
+
+        if (!decisionPromptPlayed) {
+            decisionPromptPlayed = true
+            val question = "Anda memiliki sesi tanya jawab yang aktif. Apakah ingin membuat kuis berdasarkan diskusi tadi, atau menentukan topik baru?"
+            AudioAssistant.speak(question)
+            AudioAssistant.onUtteranceCompleted = {
+                if (isActive && uiState.entryState == QuizEntryState.DECISION) {
+                    startListeningDecision()
+                }
+            }
+        }
+    }
+
+    // Begitu soal dibacakan, mic otomatis dibuka.
     LaunchedEffect(uiState.status, uiState.currentIndex, isActive) {
         if (!isActive) return@LaunchedEffect
 
@@ -161,7 +247,9 @@ fun QuizScreen(
 
             QuizStatus.FINISHED,
             QuizStatus.IDLE -> {
-                AudioAssistant.onUtteranceCompleted = null
+                if (uiState.entryState != QuizEntryState.DECISION) {
+                    AudioAssistant.onUtteranceCompleted = null
+                }
             }
         }
     }
@@ -231,57 +319,120 @@ fun QuizScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = topicInput,
-                    onValueChange = { topicInput = it },
-                    modifier = Modifier.weight(1f),
-                    label = { Text("Topik Quiz") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(
-                        onGo = {
+            if (uiState.status == QuizStatus.IDLE && uiState.entryState == QuizEntryState.DECISION) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .border(1.dp, NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                        .background(SurfaceCard.copy(alpha = 0.55f))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Pilih cara memulai kuis",
+                        color = NeonCyan,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Button(
+                        onClick = {
+                            if (isAccessibilityMode) HapticHelper.longBuzz() else HapticHelper.shortBuzz()
+                            coroutineScope.launch {
+                                quizViewModel.startQuizFromChatHistory()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonCyan,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Sesi Chat", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (isAccessibilityMode) HapticHelper.doubleBuzz() else HapticHelper.shortBuzz()
+                            quizViewModel.chooseCustomTopicEntry()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonGreen,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Topik Baru", fontWeight = FontWeight.Bold)
+                    }
+
+                    Text(
+                        text = "Anda juga bisa memilih lewat suara: ucapkan Sesi Chat atau Topik Baru.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            if (uiState.status == QuizStatus.IDLE && uiState.entryState == QuizEntryState.TOPIC_INPUT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = topicInput,
+                        onValueChange = { topicInput = it },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Topik Quiz") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(
+                            onGo = {
+                                coroutineScope.launch {
+                                    HapticHelper.shortBuzz()
+                                    quizViewModel.generateNewQuiz(topicInput)
+                                }
+                            }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonGreen.copy(alpha = 0.8f),
+                            unfocusedBorderColor = NeonGreen.copy(alpha = 0.35f),
+                            focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
+                            unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f),
+                            cursorColor = NeonGreen
+                        )
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
                             coroutineScope.launch {
                                 HapticHelper.shortBuzz()
                                 quizViewModel.generateNewQuiz(topicInput)
                             }
-                        }
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonGreen.copy(alpha = 0.8f),
-                        unfocusedBorderColor = NeonGreen.copy(alpha = 0.35f),
-                        focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
-                        unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f),
-                        cursorColor = NeonGreen
-                    )
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            HapticHelper.shortBuzz()
-                            quizViewModel.generateNewQuiz(topicInput)
-                        }
-                    },
-                    enabled = !isLoading,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = NeonGreen,
-                        contentColor = Color.Black
-                    )
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = Color.Black
+                        },
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonGreen,
+                            contentColor = Color.Black
                         )
-                    } else {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Generate Quiz")
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.Black
+                            )
+                        } else {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Generate Quiz")
+                        }
                     }
                 }
             }
@@ -308,20 +459,19 @@ fun QuizScreen(
             ) {
                 when (uiState.status) {
                     QuizStatus.IDLE -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(Icons.Default.QuestionMark, null, tint = NeonGreen)
-                            Spacer(Modifier.height(8.dp))
+                        if (uiState.entryState == QuizEntryState.CHECKING) {
                             Text(
-                                if (isActive) {
-                                    "Kuis otomatis dimulai saat backend mengirim minigame, atau tekan Generate Quiz."
-                                } else {
-                                    "Buka halaman ini untuk memulai kuis."
-                                },
+                                "Memeriksa konteks sesi untuk memulai kuis...",
                                 color = Color.White,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text(
+                                "Kuis akan dimulai setelah sumber topik dipilih.",
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -406,7 +556,7 @@ fun QuizScreen(
                                     Spacer(Modifier.width(10.dp))
 
                                     Text(
-                                        "Jawab dengan suara: A/B, angka, atau teks opsi",
+                                        "Jawab dengan suara: A/B atau nomor jawaban",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.bodySmall,
                                         textAlign = TextAlign.Center
@@ -462,6 +612,9 @@ fun QuizScreen(
                                 onClick = {
                                     HapticHelper.shortBuzz()
                                     quizViewModel.resetQuiz()
+                                    coroutineScope.launch {
+                                        quizViewModel.evaluateEntryDecision()
+                                    }
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = NeonGreen,
@@ -499,7 +652,7 @@ fun QuizScreen(
                     ) {
                         CircularProgressIndicator(color = NeonGreen, strokeWidth = 3.dp)
                         Text(
-                            "Membuat kuis berdasarkan history...",
+                            "Membuat kuis berdasarkan pilihan Anda...",
                             color = Color.White,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium

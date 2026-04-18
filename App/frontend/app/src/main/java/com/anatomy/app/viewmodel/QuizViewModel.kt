@@ -5,6 +5,8 @@ import com.anatomy.app.helper.AudioAssistant
 import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.network.QuizGameData
 import com.anatomy.app.network.QuizQuestionData
+import com.anatomy.app.network.SessionHistoryMessage
+import com.anatomy.app.repository.ChatRepository
 import com.anatomy.app.repository.QuizRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -14,20 +16,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-/**
- * QuizViewModel — MVVM state machine for the multiple-choice quiz feature.
- *
- * Manages:
- *  - Quiz status transitions: IDLE → PLAYING → FEEDBACK → FINISHED
- *  - Current question tracking, scoring, answer selection
- *  - TTS coordination: reading questions and feedback aloud
- *  - Hybrid input: supports both tap and voice-based answer selection
- *
- * Not an AndroidX ViewModel — intentionally simple to avoid DI complexity.
- * Instantiated once per MainPagerScreen and shared with QuizScreen.
- */
 class QuizViewModel(
-    private val quizRepository: QuizRepository
+    private val quizRepository: QuizRepository,
+    private val chatRepository: ChatRepository
 ) {
     private val TAG = "QuizViewModel"
 
@@ -36,8 +27,6 @@ class QuizViewModel(
     private var pendingQuizJob: Job? = null
     val isLoading: StateFlow<Boolean> = quizRepository.isLoading
     val error: StateFlow<String?> = quizRepository.error
-
-    // ── Public API ─────────────────────────────────────────────
 
     fun observePendingQuiz(scope: CoroutineScope) {
         if (pendingQuizJob != null) return
@@ -55,15 +44,64 @@ class QuizViewModel(
         pendingQuizJob = null
     }
 
-    /**
-     * Start a quiz from the given game data (received from backend trigger_minigame).
-     * Clears any previous quiz state and begins from question 0.
-     */
+    suspend fun evaluateEntryDecision() {
+        val state = _uiState.value
+        if (state.status != QuizStatus.IDLE) return
+        if (state.entryState == QuizEntryState.DECISION || state.entryState == QuizEntryState.TOPIC_INPUT) return
+
+        _uiState.value = state.copy(
+            entryState = QuizEntryState.CHECKING,
+            statusText = "Memeriksa sesi tanya jawab aktif..."
+        )
+
+        val history = loadActiveChatHistory()
+        val hasHistory = history.any { it.content.isNotBlank() }
+
+        if (hasHistory) {
+            _uiState.value = _uiState.value.copy(
+                hasChatHistory = true,
+                suggestedTopic = inferTopicFromHistory(history),
+                entryState = QuizEntryState.DECISION,
+                statusText = "Pilih sumber kuis: sesi chat atau topik baru."
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                hasChatHistory = false,
+                suggestedTopic = null,
+                entryState = QuizEntryState.TOPIC_INPUT,
+                statusText = "Belum ada history chat. Tentukan topik kuis baru."
+            )
+        }
+    }
+
+    fun chooseCustomTopicEntry() {
+        _uiState.value = _uiState.value.copy(
+            entryState = QuizEntryState.TOPIC_INPUT,
+            statusText = "Masukkan topik baru untuk memulai kuis."
+        )
+    }
+
+    suspend fun startQuizFromChatHistory() {
+        val history = loadActiveChatHistory()
+        if (history.none { it.content.isNotBlank() }) {
+            _uiState.value = _uiState.value.copy(
+                hasChatHistory = false,
+                entryState = QuizEntryState.TOPIC_INPUT,
+                statusText = "History chat tidak ditemukan. Masukkan topik baru."
+            )
+            return
+        }
+
+        val topic = inferTopicFromHistory(history)
+        generateNewQuiz(topic)
+    }
+
     fun startQuiz(data: QuizGameData) {
         if (data.questions.isEmpty()) {
             Log.w(TAG, "Cannot start quiz: no questions")
             _uiState.value = QuizUiState(
                 status = QuizStatus.IDLE,
+                entryState = QuizEntryState.TOPIC_INPUT,
                 statusText = "Tidak ada pertanyaan tersedia."
             )
             return
@@ -72,6 +110,9 @@ class QuizViewModel(
         Log.d(TAG, "Starting quiz: topic='${data.topic}', ${data.questions.size} questions")
         _uiState.value = QuizUiState(
             status = QuizStatus.PLAYING,
+            entryState = QuizEntryState.NONE,
+            hasChatHistory = _uiState.value.hasChatHistory,
+            suggestedTopic = _uiState.value.suggestedTopic,
             gameData = data,
             currentIndex = 0,
             score = 0,
@@ -80,19 +121,13 @@ class QuizViewModel(
         )
 
         quizRepository.clearPendingQuiz()
-
-        // Read the first question via TTS
         readCurrentQuestion()
     }
 
-    /**
-     * Called when user selects an answer (via tap or voice).
-     * @param selectedIndex The index (0-3) of the chosen option.
-     */
     fun selectAnswer(selectedIndex: Int) {
         val state = _uiState.value
         if (state.status != QuizStatus.PLAYING) return
-        if (state.selectedAnswer != null) return // Already answered
+        if (state.selectedAnswer != null) return
 
         val question = state.currentQuestion ?: return
         val isCorrect = selectedIndex == question.correct_answer_index
@@ -111,23 +146,18 @@ class QuizViewModel(
             isCorrect = isCorrect,
             score = newScore,
             feedbackText = feedbackText,
-            statusText = if (isCorrect) "Betul! 🎉" else "Salah ✗"
+            statusText = if (isCorrect) "Betul!" else "Salah"
         )
 
-        // Haptic feedback
         if (isCorrect) {
             HapticHelper.longBuzz()
         } else {
             HapticHelper.doubleBuzz()
         }
 
-        // Speak feedback
         AudioAssistant.speak(feedbackText)
     }
 
-    /**
-     * Advance to the next question, or finish if all questions answered.
-     */
     fun nextQuestion() {
         val state = _uiState.value
         if (state.status != QuizStatus.FEEDBACK) return
@@ -136,7 +166,6 @@ class QuizViewModel(
         val data = state.gameData ?: return
 
         if (nextIndex >= data.questions.size) {
-            // Quiz finished
             val finalMsg = "Kuis selesai! Skor Anda: ${state.score} dari ${data.questions.size}."
             _uiState.value = state.copy(
                 status = QuizStatus.FINISHED,
@@ -144,12 +173,11 @@ class QuizViewModel(
                 selectedAnswer = null,
                 isCorrect = null,
                 feedbackText = finalMsg,
-                statusText = "Quiz selesai!"
+                statusText = "Quiz selesai"
             )
             HapticHelper.longBuzz()
             AudioAssistant.speak(finalMsg)
         } else {
-            // Next question
             _uiState.value = state.copy(
                 status = QuizStatus.PLAYING,
                 currentIndex = nextIndex,
@@ -162,12 +190,13 @@ class QuizViewModel(
         }
     }
 
-    /**
-     * Reset quiz to idle state (used when leaving quiz page or retrying).
-     */
     fun resetQuiz() {
-        Log.d(TAG, "Quiz reset to idle")
-        _uiState.value = QuizUiState()
+        Log.d(TAG, "Quiz reset to entry gate")
+        _uiState.value = QuizUiState(
+            status = QuizStatus.IDLE,
+            entryState = QuizEntryState.CHECKING,
+            statusText = "Menyiapkan halaman kuis..."
+        )
     }
 
     suspend fun generateNewQuiz(topic: String) {
@@ -175,6 +204,7 @@ class QuizViewModel(
         if (trimmedTopic.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 status = QuizStatus.IDLE,
+                entryState = QuizEntryState.TOPIC_INPUT,
                 statusText = "Topik kuis tidak boleh kosong"
             )
             return
@@ -182,6 +212,7 @@ class QuizViewModel(
 
         _uiState.value = _uiState.value.copy(
             status = QuizStatus.IDLE,
+            entryState = QuizEntryState.NONE,
             statusText = "Membuat kuis tentang $trimmedTopic..."
         )
 
@@ -191,6 +222,7 @@ class QuizViewModel(
         }.onFailure { e ->
             _uiState.value = _uiState.value.copy(
                 status = QuizStatus.IDLE,
+                entryState = QuizEntryState.TOPIC_INPUT,
                 statusText = e.message ?: "Gagal membuat kuis"
             )
         }
@@ -200,37 +232,33 @@ class QuizViewModel(
         quizRepository.clearError()
     }
 
-    /**
-     * Try to match a voice input string to one of the current answer options.
-     * Supports matching by option letter (A/B/C/D), number (1/2/3/4), or partial text match.
-     * Returns the matched option index, or -1 if no match.
-     */
     fun matchVoiceAnswer(spokenText: String): Int {
-        val state = _uiState.value
-        val question = state.currentQuestion ?: return -1
-        val normalized = spokenText.lowercase().trim()
+        val question = _uiState.value.currentQuestion ?: return -1
+        val normalized = spokenText
+            .lowercase()
+            .replace(".", " ")
+            .replace(",", " ")
+            .replace(";", " ")
+            .trim()
 
-        // Match by letter: "a", "b", "c", "d"
-        val letterIndex = when {
-            normalized == "a" || normalized.startsWith("a ") || normalized.startsWith("a.") -> 0
-            normalized == "b" || normalized.startsWith("b ") || normalized.startsWith("b.") -> 1
-            normalized == "c" || normalized.startsWith("c ") || normalized.startsWith("c.") -> 2
-            normalized == "d" || normalized.startsWith("d ") || normalized.startsWith("d.") -> 3
+        val byLetter = when {
+            normalized == "a" || normalized.startsWith("a ") || normalized.contains("opsi a") || normalized.contains("pilihan a") -> 0
+            normalized == "b" || normalized.startsWith("b ") || normalized.contains("opsi b") || normalized.contains("pilihan b") -> 1
+            normalized == "c" || normalized.startsWith("c ") || normalized.contains("opsi c") || normalized.contains("pilihan c") -> 2
+            normalized == "d" || normalized.startsWith("d ") || normalized.contains("opsi d") || normalized.contains("pilihan d") -> 3
             else -> -1
         }
-        if (letterIndex >= 0 && letterIndex < question.answer_options.size) return letterIndex
+        if (byLetter in question.answer_options.indices) return byLetter
 
-        // Match by number: "1", "2", "3", "4" or "satu", "dua", "tiga", "empat"
-        val numberIndex = when {
-            normalized.contains("satu") || normalized == "1" -> 0
-            normalized.contains("dua") || normalized == "2" -> 1
-            normalized.contains("tiga") || normalized == "3" -> 2
-            normalized.contains("empat") || normalized == "4" -> 3
+        val byNumber = when {
+            normalized == "1" || normalized.contains("nomor satu") || normalized.contains("jawaban satu") || normalized.contains("pertama") || normalized.contains("satu") -> 0
+            normalized == "2" || normalized.contains("nomor dua") || normalized.contains("jawaban dua") || normalized.contains("kedua") || normalized.contains("dua") -> 1
+            normalized == "3" || normalized.contains("nomor tiga") || normalized.contains("jawaban tiga") || normalized.contains("ketiga") || normalized.contains("tiga") -> 2
+            normalized == "4" || normalized.contains("nomor empat") || normalized.contains("jawaban empat") || normalized.contains("keempat") || normalized.contains("empat") -> 3
             else -> -1
         }
-        if (numberIndex >= 0 && numberIndex < question.answer_options.size) return numberIndex
+        if (byNumber in question.answer_options.indices) return byNumber
 
-        // Partial text match: see if spoken text contains any option text
         question.answer_options.forEachIndexed { index, option ->
             if (normalized.contains(option.lowercase().trim())) return index
         }
@@ -238,7 +266,24 @@ class QuizViewModel(
         return -1
     }
 
-    // ── Internal ───────────────────────────────────────────────
+    private suspend fun loadActiveChatHistory(): List<SessionHistoryMessage> {
+        val sessionId = chatRepository.getActiveSessionId() ?: return emptyList()
+        return chatRepository.getSessionHistory(sessionId)
+    }
+
+    private fun inferTopicFromHistory(history: List<SessionHistoryMessage>): String {
+        val lastUserMessage = history
+            .asReversed()
+            .firstOrNull { it.role.equals("user", ignoreCase = true) && it.content.isNotBlank() }
+            ?.content
+            ?.trim()
+
+        if (!lastUserMessage.isNullOrBlank()) {
+            return lastUserMessage.take(120)
+        }
+
+        return "anatomi torso"
+    }
 
     private fun readCurrentQuestion() {
         val state = _uiState.value
@@ -254,21 +299,25 @@ class QuizViewModel(
     }
 }
 
-// ── Data classes ───────────────────────────────────────────
+enum class QuizEntryState {
+    NONE,
+    CHECKING,
+    DECISION,
+    TOPIC_INPUT
+}
 
 enum class QuizStatus {
-    /** No quiz active — waiting for data */
     IDLE,
-    /** Question is displayed, waiting for answer */
     PLAYING,
-    /** Answer selected, showing feedback */
     FEEDBACK,
-    /** All questions answered */
     FINISHED
 }
 
 data class QuizUiState(
     val status: QuizStatus = QuizStatus.IDLE,
+    val entryState: QuizEntryState = QuizEntryState.CHECKING,
+    val hasChatHistory: Boolean = false,
+    val suggestedTopic: String? = null,
     val gameData: QuizGameData? = null,
     val currentIndex: Int = 0,
     val score: Int = 0,
@@ -278,11 +327,9 @@ data class QuizUiState(
     val feedbackText: String = "",
     val statusText: String = "Menunggu kuis..."
 ) {
-    /** The current question being displayed, or null if quiz is not active. */
     val currentQuestion: QuizQuestionData?
         get() = gameData?.questions?.getOrNull(currentIndex)
 
-    /** Progress fraction (0..1) for progress indicator. */
     val progress: Float
         get() = if (totalQuestions > 0) (currentIndex.toFloat() / totalQuestions) else 0f
 }

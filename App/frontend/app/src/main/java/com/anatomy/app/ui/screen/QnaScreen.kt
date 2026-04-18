@@ -182,6 +182,21 @@ fun QnaScreen(
         }
     }
 
+    fun handoffToQuizPage() {
+        stopMic()
+        isProcessing = false
+        val confirmation = "Baik, mari kita mulai kuisnya di halaman kuis."
+        statusText = confirmation
+        AudioAssistant.stop()
+        AudioAssistant.speak(confirmation)
+        AudioAssistant.onUtteranceCompleted = {
+            if (isActive) {
+                HapticHelper.doubleBuzz()
+                onNavigateToQuiz()
+            }
+        }
+    }
+
     fun sendQuestionToBackend(question: String) {
         coroutineScope.launch {
             val sessionId = uiState.sessionId ?: chatViewModel.ensureSessionId()
@@ -234,6 +249,11 @@ fun QnaScreen(
                             startNewSessionWithVoiceCue()
                             return@startListening
                         }
+
+                        normalized.contains("quiz") || normalized.contains("kuis") -> {
+                            handoffToQuizPage()
+                            return@startListening
+                        }
                     }
 
                     isProcessing = true
@@ -256,6 +276,12 @@ fun QnaScreen(
 
     fun processTypedQuestion(question: String) {
         if (question.isBlank() || isProcessing) return
+
+        val normalized = question.lowercase()
+        if (normalized.contains("quiz") || normalized.contains("kuis")) {
+            handoffToQuizPage()
+            return
+        }
 
         try {
             if (isListening) {
@@ -336,9 +362,7 @@ fun QnaScreen(
                         }
 
                         quizRepository.submitQuizData(gameData)
-                        HapticHelper.shortBuzz()
-                        statusText = "Kuis siap. Berpindah ke Mode Quiz..."
-                        onNavigateToQuiz()
+                        handoffToQuizPage()
                     }
 
                     response.action == "chat_response" || response.assistant_message != null -> {
@@ -346,6 +370,14 @@ fun QnaScreen(
                         if (answer.isBlank()) {
                             isProcessing = false
                             statusText = "Respons backend kosong."
+                            return@collect
+                        }
+
+                        val normalizedAnswer = answer.lowercase()
+                        val shouldHandoffToQuiz = normalizedAnswer.contains("kuis") ||
+                            normalizedAnswer.contains("quiz")
+                        if (shouldHandoffToQuiz) {
+                            handoffToQuizPage()
                             return@collect
                         }
 
