@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -105,6 +106,7 @@ private val qnaJson = Json {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun QnaScreen(
     isActive: Boolean = true,
     chatViewModel: ChatViewModel,
@@ -141,10 +143,11 @@ fun QnaScreen(
         AudioAssistant.stop()
         AudioAssistant.speak(greeting)
         AudioAssistant.onUtteranceCompleted = {
-            if (!isActive || isListening || isProcessing) return@onUtteranceCompleted
-            HapticHelper.shortBuzz()
-            statusText = "🎤 Mendengarkan..."
-            chatViewModel.requestAutoListen()
+            if (isActive && !isListening && !isProcessing) {
+                HapticHelper.shortBuzz()
+                statusText = "🎤 Mendengarkan..."
+                chatViewModel.requestAutoListen()
+            }
         }
     }
 
@@ -352,10 +355,11 @@ fun QnaScreen(
 
                         AudioAssistant.speak(answer)
                         AudioAssistant.onUtteranceCompleted = {
-                            if (!isActive || isProcessing || isListening) return@onUtteranceCompleted
-                            HapticHelper.shortBuzz()
-                            statusText = "🎤 Mendengarkan..."
-                            chatViewModel.requestAutoListen()
+                            if (isActive && !isProcessing && !isListening) {
+                                HapticHelper.shortBuzz()
+                                statusText = "🎤 Mendengarkan..."
+                                chatViewModel.requestAutoListen()
+                            }
                         }
                     }
 

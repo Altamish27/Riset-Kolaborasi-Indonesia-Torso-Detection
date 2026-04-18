@@ -7,6 +7,7 @@ import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.SessionHistoryMessage
 import com.anatomy.app.network.SessionSummary
 import com.anatomy.app.network.VoiceWebSocketClient
+import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.flow.Flow
 
@@ -106,7 +107,7 @@ class ChatRepository(
 
     suspend fun getSessionHistory(sessionId: String): List<SessionHistoryMessage> {
         return try {
-            apiService.getSessionHistory(sessionId).messages
+            apiService.getSessionHistory(sessionId.toString()).messages
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching chat history", e)
             emptyList()
