@@ -135,10 +135,13 @@ fun QnaScreen(
         AudioAssistant.stop()
         AudioAssistant.speak(greeting)
         AudioAssistant.onUtteranceCompleted = {
-            if (!isActive || isListening || isProcessing) return@onUtteranceCompleted
-            HapticHelper.shortBuzz()
-            statusText = "🎤 Mendengarkan..."
-            chatViewModel.requestAutoListen()
+            // Hapus @onUtteranceCompleted karena label ini tidak valid untuk assignment variable
+            if (isActive && !isListening && !isProcessing) {
+                HapticHelper.shortBuzz()
+                statusText = "🎤 Mendengarkan..."
+                // Jalankan di main thread jika perlu, atau panggil fungsi listening
+                chatViewModel.requestAutoListen()
+            }
         }
     }
 
@@ -322,7 +325,7 @@ fun QnaScreen(
                         if (answer.isBlank()) {
                             isProcessing = false
                             statusText = "Respons backend kosong."
-                            return@collect
+                            return@collect // Gunakan @collect untuk keluar dari blok flow
                         }
 
                         chatViewModel.appendAssistantMessage(answer)
@@ -331,10 +334,13 @@ fun QnaScreen(
 
                         AudioAssistant.speak(answer)
                         AudioAssistant.onUtteranceCompleted = {
-                            if (!isActive || isProcessing || isListening) return@onUtteranceCompleted
-                            HapticHelper.shortBuzz()
-                            statusText = "🎤 Mendengarkan..."
-                            chatViewModel.requestAutoListen()
+                            // Gunakan logika if-check biasa tanpa return label yang bermasalah
+                            if (isActive && !isProcessing && !isListening) {
+                                HapticHelper.shortBuzz()
+                                // Update UI harus dipastikan di Main Thread jika dari callback
+                                statusText = "🎤 Mendengarkan..."
+                                chatViewModel.requestAutoListen()
+                            }
                         }
                     }
 
