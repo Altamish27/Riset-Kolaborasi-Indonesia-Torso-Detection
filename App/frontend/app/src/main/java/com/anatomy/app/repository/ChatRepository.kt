@@ -5,6 +5,7 @@ import android.util.Log
 import com.anatomy.app.network.ChatResponse
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.SessionHistoryMessage
+import com.anatomy.app.network.SessionSummary
 import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.utils.UnifiedWebSocketManager
@@ -103,14 +104,46 @@ class ChatRepository(
         }
     }
 
+    suspend fun fetchSessions(): List<SessionSummary> {
+        return try {
+            apiService.listSessions()
+        } catch (e: Exception) {
+            Log.w(TAG, "Primary sessions endpoint failed, trying legacy path", e)
+            try {
+                apiService.listSessionsLegacy()
+            } catch (legacyError: Exception) {
+                Log.e(TAG, "Error fetching sessions list", legacyError)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun resumeLastSessionIdOrCreate(): String? {
+        val sessions = fetchSessions()
+        val latest = sessions.maxByOrNull {
+            it.updated_at ?: it.created_at ?: ""
+        }
+
+        if (latest != null) {
+            setActiveSessionId(latest.session_id)
+            return latest.session_id
+        }
+
+        return createSession()
+    }
+
+    fun setActiveSessionId(sessionId: String) {
+        TokenManager.saveChatSessionId(context, sessionId)
+    }
+
     fun clearPersistedSessionId() {
         TokenManager.clearChatSessionId(context)
     }
     
     /**
-     * List all sessions (now uses unified connection)
+     * List all sessions via WebSocket (legacy helper).
      */
-    fun listSessions(): Boolean {
+    fun listSessionsWs(): Boolean {
         return UnifiedWebSocketManager.listSessions()
     }
     
