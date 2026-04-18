@@ -71,6 +71,16 @@ data class IngestMetadata(
 )
 
 /**
+ * Quiz Generation Response — from POST /chat/generate_quiz?topic={topic}
+ * Returns both session_id and structured quiz data.
+ */
+@Serializable
+data class GenerateQuizResponse(
+    val session_id: String,
+    val quiz: QuizGameData
+)
+
+/**
  * LLM explanations now use WebSocket /ws/chat endpoint
  * No REST endpoint needed - handled by ChatWebSocketClient
  */

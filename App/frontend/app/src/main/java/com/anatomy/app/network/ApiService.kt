@@ -4,6 +4,7 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
+import retrofit2.http.Query
 
 /**
  * API Service Interface for HTTP endpoints
@@ -32,6 +33,12 @@ interface ApiService {
     // Create a new chat session (server will return session_id)
     @POST("/chat/sessions")
     suspend fun createSession(): SessionResponse
+
+    // Generate quiz via LLM based on topic and recent chat history
+    @POST("/chat/generate_quiz")
+    suspend fun generateQuiz(
+        @Query("topic") topic: String
+    ): GenerateQuizResponse
 
 }
 

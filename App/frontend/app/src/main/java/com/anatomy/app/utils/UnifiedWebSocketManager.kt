@@ -89,6 +89,14 @@ object UnifiedWebSocketManager {
     }
     
     /**
+     * Send application-level ping to keep WebSocket alive.
+     * Used by QuizViewModel to prevent connection drop during quiz.
+     */
+    fun sendPing(): Boolean {
+        return unifiedClient?.sendPing() ?: false
+    }
+
+    /**
      * Disconnect (call this on logout)
      */
     fun disconnect() {
