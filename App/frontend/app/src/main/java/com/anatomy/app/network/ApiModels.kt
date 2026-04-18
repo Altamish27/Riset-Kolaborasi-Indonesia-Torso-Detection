@@ -31,6 +31,19 @@ data class SessionResponse(
     val session_id: String
 )
 
+@Serializable
+data class SessionHistoryMessage(
+    val role: String,
+    val content: String,
+    val timestamp: String? = null
+)
+
+@Serializable
+data class SessionHistoryResponse(
+    val session_id: String,
+    val messages: List<SessionHistoryMessage> = emptyList()
+)
+
 /**
  * Chat Models
  */
@@ -70,10 +83,6 @@ data class IngestMetadata(
     val description: String
 )
 
-/**
- * Quiz Generation Response — from POST /chat/generate_quiz?topic={topic}
- * Returns both session_id and structured quiz data.
- */
 @Serializable
 data class GenerateQuizResponse(
     val session_id: String,

@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -47,13 +48,16 @@ import androidx.compose.ui.util.lerp
 import com.anatomy.app.helper.AudioAssistant
 import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.network.HttpClientFactory
+import com.anatomy.app.repository.ChatRepository
 import com.anatomy.app.repository.QuizRepository
 import com.anatomy.app.ui.theme.FabTextOnly
 import com.anatomy.app.ui.theme.FabVoiceOn
 import com.anatomy.app.ui.theme.NeonAmber
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
+import com.anatomy.app.viewmodel.ChatViewModel
 import com.anatomy.app.viewmodel.QuizViewModel
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 /**
@@ -72,20 +76,20 @@ import kotlin.math.absoluteValue
 @Composable
 fun MainPagerScreen() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val pageNames = listOf("Mode Scan Anatomi", "Mode Tanya Jawab", "Mode Quiz")
     val pageColors = listOf(NeonCyan, NeonCyan, NeonGreen)
     val pagerState = rememberPagerState(pageCount = { pageNames.size })
 
+    val apiService = remember { HttpClientFactory.createApiService(context) }
+    val chatRepository = remember { ChatRepository(context) }
+    val chatViewModel = remember { ChatViewModel(chatRepository) }
+    val quizRepository = remember { QuizRepository(apiService, context) }
+    val quizViewModel = remember { QuizViewModel(quizRepository) }
+
     var fabMode by remember { mutableStateOf("voice") }
     var showOnboarding by remember { mutableStateOf(isFirstLaunch(context)) }
     var hasSpokenInitial by remember { mutableStateOf(false) }
-
-    // Quiz: create repository + viewmodel once per screen lifetime
-    val quizRepository = remember {
-        val apiService = HttpClientFactory.createApiService(context)
-        QuizRepository(apiService, context)
-    }
-    val quizViewModel = remember { QuizViewModel(quizRepository) }
 
     // Welcome announcement — ONLY on first launch (non-onboarding) sessions
     LaunchedEffect(Unit) {
@@ -181,8 +185,20 @@ fun MainPagerScreen() {
 
                     when (page) {
                         0 -> ScanAnatomyScreen(isActive = isSettled)
-                        1 -> QnaScreen(isActive = isSettled)
-                        2 -> QuizScreen(isActive = isSettled, quizViewModel = quizViewModel)
+                        1 -> QnaScreen(
+                            isActive = isSettled,
+                            chatViewModel = chatViewModel,
+                            quizRepository = quizRepository,
+                            onNavigateToQuiz = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(2)
+                                }
+                            }
+                        )
+                        2 -> QuizScreen(
+                            isActive = isSettled,
+                            quizViewModel = quizViewModel
+                        )
                     }
                 }
             }

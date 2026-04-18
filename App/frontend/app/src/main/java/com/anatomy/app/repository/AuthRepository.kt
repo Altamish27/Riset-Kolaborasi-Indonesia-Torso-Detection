@@ -39,6 +39,8 @@ class AuthRepository(
                     response.refresh_token,
                     username
                 )
+                // Start a fresh chat session on each successful login.
+                TokenManager.clearChatSessionId(context)
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Login response missing tokens"))

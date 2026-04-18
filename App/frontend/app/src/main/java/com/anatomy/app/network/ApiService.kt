@@ -1,9 +1,11 @@
 package com.anatomy.app.network
 
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
@@ -34,7 +36,11 @@ interface ApiService {
     @POST("/chat/sessions")
     suspend fun createSession(): SessionResponse
 
-    // Generate quiz via LLM based on topic and recent chat history
+    @GET("/chat/sessions/{session_id}/history")
+    suspend fun getSessionHistory(
+        @Path("session_id") sessionId: String
+    ): SessionHistoryResponse
+
     @POST("/chat/generate_quiz")
     suspend fun generateQuiz(
         @Query("topic") topic: String

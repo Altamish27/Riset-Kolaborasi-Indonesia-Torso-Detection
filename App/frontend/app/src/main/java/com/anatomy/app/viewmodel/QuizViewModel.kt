@@ -6,28 +6,22 @@ import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.network.QuizGameData
 import com.anatomy.app.network.QuizQuestionData
 import com.anatomy.app.repository.QuizRepository
-import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * QuizViewModel — MVVM state machine for the multiple-choice quiz feature.
  *
  * Manages:
- *  - Quiz status transitions: IDLE → LOADING → PLAYING → FEEDBACK → FINISHED
+ *  - Quiz status transitions: IDLE → PLAYING → FEEDBACK → FINISHED
  *  - Current question tracking, scoring, answer selection
  *  - TTS coordination: reading questions and feedback aloud
  *  - Hybrid input: supports both tap and voice-based answer selection
- *  - WebSocket ping: sends periodic pings to keep the connection alive during quiz
- *  - Dual quiz source: WebSocket (trigger_minigame) and HTTP (generate_quiz endpoint)
  *
  * Not an AndroidX ViewModel — intentionally simple to avoid DI complexity.
  * Instantiated once per MainPagerScreen and shared with QuizScreen.
@@ -39,22 +33,28 @@ class QuizViewModel(
 
     private val _uiState = MutableStateFlow(QuizUiState())
     val uiState: StateFlow<QuizUiState> = _uiState.asStateFlow()
-
-    /** Loading state from repository (HTTP quiz generation in progress) */
-    val isLoading: StateFlow<Boolean> = quizRepository.isLoading
-
-    /** Error state from repository (HTTP quiz generation failed) */
-    val error: StateFlow<String?> = quizRepository.error
-
-    // ── Ping management ──────────────────────────────────────
-    private val pingScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var pingJob: Job? = null
+    private var pendingQuizJob: Job? = null
 
     // ── Public API ─────────────────────────────────────────────
 
+    fun observePendingQuiz(scope: CoroutineScope) {
+        if (pendingQuizJob != null) return
+        pendingQuizJob = scope.launch {
+            quizRepository.pendingQuiz.collectLatest { pending ->
+                if (pending != null) {
+                    startQuiz(pending)
+                }
+            }
+        }
+    }
+
+    fun stopObservingPendingQuiz() {
+        pendingQuizJob?.cancel()
+        pendingQuizJob = null
+    }
+
     /**
-     * Start a quiz from the given game data (received from backend trigger_minigame
-     * or from HTTP generate_quiz endpoint).
+     * Start a quiz from the given game data (received from backend trigger_minigame).
      * Clears any previous quiz state and begins from question 0.
      */
     fun startQuiz(data: QuizGameData) {
@@ -78,9 +78,6 @@ class QuizViewModel(
         )
 
         quizRepository.clearPendingQuiz()
-
-        // Start ping to keep WebSocket alive while user is thinking
-        startPing()
 
         // Read the first question via TTS
         readCurrentQuestion()
@@ -137,8 +134,7 @@ class QuizViewModel(
         val data = state.gameData ?: return
 
         if (nextIndex >= data.questions.size) {
-            // Quiz finished — stop ping
-            stopPing()
+            // Quiz finished
             val finalMsg = "Kuis selesai! Skor Anda: ${state.score} dari ${data.questions.size}."
             _uiState.value = state.copy(
                 status = QuizStatus.FINISHED,
@@ -169,42 +165,7 @@ class QuizViewModel(
      */
     fun resetQuiz() {
         Log.d(TAG, "Quiz reset to idle")
-        stopPing()
         _uiState.value = QuizUiState()
-    }
-
-    /**
-     * Generate a new quiz via the HTTP endpoint POST /chat/generate_quiz.
-     * Sets UI to LOADING state, calls the repository, and starts the quiz on success.
-     */
-    suspend fun generateNewQuiz(topic: String) {
-        Log.d(TAG, "Generating new quiz for topic: $topic")
-        _uiState.value = _uiState.value.copy(
-            status = QuizStatus.LOADING,
-            statusText = "Membuat kuis tentang \"$topic\"..."
-        )
-
-        val result = quizRepository.generateQuiz(topic)
-
-        result.onSuccess { response ->
-            Log.d(TAG, "Quiz generated successfully, starting quiz")
-            startQuiz(response.quiz)
-        }
-
-        result.onFailure { e ->
-            Log.e(TAG, "Quiz generation failed", e)
-            _uiState.value = _uiState.value.copy(
-                status = QuizStatus.IDLE,
-                statusText = "Gagal membuat kuis: ${e.message ?: "Error tidak diketahui"}"
-            )
-        }
-    }
-
-    /**
-     * Clear error state from repository.
-     */
-    fun clearError() {
-        quizRepository.clearError()
     }
 
     /**
@@ -245,41 +206,6 @@ class QuizViewModel(
         return -1
     }
 
-    // ── Ping: keep WebSocket alive during quiz ───────────────
-
-    /**
-     * Start sending periodic ping messages to the WebSocket.
-     * Called when quiz starts playing to prevent connection drop
-     * while user is thinking about answers.
-     */
-    fun startPing() {
-        pingJob?.cancel()
-        pingJob = pingScope.launch {
-            Log.d(TAG, "Starting quiz ping loop (25s interval)")
-            while (isActive) {
-                try {
-                    val sent = UnifiedWebSocketManager.sendPing()
-                    if (!sent) {
-                        Log.w(TAG, "Quiz ping send failed")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error sending quiz ping", e)
-                }
-                delay(25_000L)
-            }
-        }
-    }
-
-    /**
-     * Stop sending periodic ping messages.
-     * Called when quiz finishes or when user leaves quiz page.
-     */
-    fun stopPing() {
-        pingJob?.cancel()
-        pingJob = null
-        Log.d(TAG, "Quiz ping loop stopped")
-    }
-
     // ── Internal ───────────────────────────────────────────────
 
     private fun readCurrentQuestion() {
@@ -299,10 +225,8 @@ class QuizViewModel(
 // ── Data classes ───────────────────────────────────────────
 
 enum class QuizStatus {
-    /** No quiz active — waiting for data or user to generate */
+    /** No quiz active — waiting for data */
     IDLE,
-    /** Loading quiz from HTTP endpoint */
-    LOADING,
     /** Question is displayed, waiting for answer */
     PLAYING,
     /** Answer selected, showing feedback */
