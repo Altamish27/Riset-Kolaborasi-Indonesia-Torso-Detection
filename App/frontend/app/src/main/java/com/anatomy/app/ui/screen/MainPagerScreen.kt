@@ -191,6 +191,7 @@ fun MainPagerScreen() {
                         0 -> ScanAnatomyScreen(isActive = isSettled)
                         1 -> QnaScreen(
                             isActive = isSettled,
+                            chatRepository = chatRepository,
                             chatViewModel = chatViewModel,
                             quizRepository = quizRepository,
                             onNavigateToQuiz = {

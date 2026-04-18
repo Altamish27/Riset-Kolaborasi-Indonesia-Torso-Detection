@@ -47,52 +47,42 @@ class QuizViewModel(
     suspend fun evaluateEntryDecision() {
         val state = _uiState.value
         if (state.status != QuizStatus.IDLE) return
-        if (state.entryState == QuizEntryState.DECISION || state.entryState == QuizEntryState.TOPIC_INPUT) return
+        if (state.entryState == QuizEntryState.CHOOSING_MODE || state.entryState == QuizEntryState.LISTENING_TOPIC) return
 
         _uiState.value = state.copy(
-            entryState = QuizEntryState.CHECKING,
+            entryState = QuizEntryState.CHOOSING_MODE,
             statusText = "Memeriksa sesi tanya jawab aktif..."
         )
 
         val history = loadActiveChatHistory()
         val hasHistory = history.any { it.content.isNotBlank() }
 
-        if (hasHistory) {
-            _uiState.value = _uiState.value.copy(
-                hasChatHistory = true,
-                suggestedTopic = inferTopicFromHistory(history),
-                entryState = QuizEntryState.DECISION,
-                statusText = "Pilih sumber kuis: sesi chat atau topik baru."
-            )
-        } else {
-            _uiState.value = _uiState.value.copy(
-                hasChatHistory = false,
-                suggestedTopic = null,
-                entryState = QuizEntryState.TOPIC_INPUT,
-                statusText = "Belum ada history chat. Tentukan topik kuis baru."
-            )
-        }
+        _uiState.value = _uiState.value.copy(
+            hasChatHistory = hasHistory,
+            suggestedTopic = inferTopicFromHistory(history),
+            entryState = QuizEntryState.CHOOSING_MODE,
+            statusText = "Menunggu pilihan mode kuis lewat suara."
+        )
     }
 
     fun chooseCustomTopicEntry() {
         _uiState.value = _uiState.value.copy(
-            entryState = QuizEntryState.TOPIC_INPUT,
-            statusText = "Masukkan topik baru untuk memulai kuis."
+            entryState = QuizEntryState.LISTENING_TOPIC,
+            statusText = "Sebutkan topik baru untuk memulai kuis."
         )
     }
 
     suspend fun startQuizFromChatHistory() {
         val history = loadActiveChatHistory()
-        if (history.none { it.content.isNotBlank() }) {
+        val topic = if (history.none { it.content.isNotBlank() }) {
             _uiState.value = _uiState.value.copy(
                 hasChatHistory = false,
-                entryState = QuizEntryState.TOPIC_INPUT,
-                statusText = "History chat tidak ditemukan. Masukkan topik baru."
+                statusText = "History kosong. Menggunakan topik Anatomi Torso Umum."
             )
-            return
+            "Anatomi Torso Umum"
+        } else {
+            inferTopicFromHistory(history)
         }
-
-        val topic = inferTopicFromHistory(history)
         generateNewQuiz(topic)
     }
 
@@ -101,7 +91,7 @@ class QuizViewModel(
             Log.w(TAG, "Cannot start quiz: no questions")
             _uiState.value = QuizUiState(
                 status = QuizStatus.IDLE,
-                entryState = QuizEntryState.TOPIC_INPUT,
+                entryState = QuizEntryState.LISTENING_TOPIC,
                 statusText = "Tidak ada pertanyaan tersedia."
             )
             return
@@ -194,7 +184,7 @@ class QuizViewModel(
         Log.d(TAG, "Quiz reset to entry gate")
         _uiState.value = QuizUiState(
             status = QuizStatus.IDLE,
-            entryState = QuizEntryState.CHECKING,
+            entryState = QuizEntryState.CHOOSING_MODE,
             statusText = "Menyiapkan halaman kuis..."
         )
     }
@@ -204,7 +194,7 @@ class QuizViewModel(
         if (trimmedTopic.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 status = QuizStatus.IDLE,
-                entryState = QuizEntryState.TOPIC_INPUT,
+                entryState = QuizEntryState.LISTENING_TOPIC,
                 statusText = "Topik kuis tidak boleh kosong"
             )
             return
@@ -222,7 +212,7 @@ class QuizViewModel(
         }.onFailure { e ->
             _uiState.value = _uiState.value.copy(
                 status = QuizStatus.IDLE,
-                entryState = QuizEntryState.TOPIC_INPUT,
+                entryState = QuizEntryState.LISTENING_TOPIC,
                 statusText = e.message ?: "Gagal membuat kuis"
             )
         }
@@ -301,9 +291,8 @@ class QuizViewModel(
 
 enum class QuizEntryState {
     NONE,
-    CHECKING,
-    DECISION,
-    TOPIC_INPUT
+    CHOOSING_MODE,
+    LISTENING_TOPIC
 }
 
 enum class QuizStatus {
@@ -315,7 +304,7 @@ enum class QuizStatus {
 
 data class QuizUiState(
     val status: QuizStatus = QuizStatus.IDLE,
-    val entryState: QuizEntryState = QuizEntryState.CHECKING,
+    val entryState: QuizEntryState = QuizEntryState.CHOOSING_MODE,
     val hasChatHistory: Boolean = false,
     val suggestedTopic: String? = null,
     val gameData: QuizGameData? = null,

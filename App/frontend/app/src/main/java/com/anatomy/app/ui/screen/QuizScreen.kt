@@ -1,8 +1,6 @@
 package com.anatomy.app.ui.screen
 
-import android.content.Context
 import android.util.Log
-import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,10 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Mic
@@ -34,8 +29,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -57,7 +50,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,7 +59,6 @@ import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.ui.theme.MicActive
 import com.anatomy.app.ui.theme.MicIdle
 import com.anatomy.app.ui.theme.NeonAmber
-import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import com.anatomy.app.ui.theme.NeonMagenta
 import com.anatomy.app.ui.theme.SurfaceCard
@@ -88,18 +79,10 @@ fun QuizScreen(
     val errorMsg by quizViewModel.error.collectAsState()
 
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
-    val accessibilityManager = remember {
-        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-    }
 
-    val isAccessibilityMode =
-        (accessibilityManager?.isEnabled == true && accessibilityManager.isTouchExplorationEnabled) ||
-            AudioAssistant.isVoiceOn
-
-    var topicInput by remember { mutableStateOf("anatomi torso") }
     var isListening by remember { mutableStateOf(false) }
     var voiceStatus by remember { mutableStateOf("Mode suara siap") }
-    var decisionPromptPlayed by remember { mutableStateOf(false) }
+    var promptedEntryState by remember { mutableStateOf<QuizEntryState?>(null) }
 
     fun startListeningAnswer() {
         if (!isActive || uiState.status != QuizStatus.PLAYING || isListening) return
@@ -143,45 +126,82 @@ fun QuizScreen(
         )
     }
 
-    fun startListeningDecision() {
-        if (!isActive || uiState.entryState != QuizEntryState.DECISION || isListening || isLoading) {
+    fun startListeningModeSelection() {
+        if (!isActive || uiState.entryState != QuizEntryState.CHOOSING_MODE || isListening || isLoading) {
             return
         }
 
         AudioAssistant.stop()
         isListening = true
         HapticHelper.shortBuzz()
-        voiceStatus = "🎤 Ucapkan: Sesi Chat atau Topik Baru"
+        voiceStatus = "🎤 Ucapkan: obrolan tadi atau topik baru"
 
         voiceHelper.startListening(
             onResult = { spokenText ->
                 isListening = false
                 val spoken = spokenText.lowercase().trim()
                 when {
-                    spoken.contains("sesi chat") ||
-                        (spoken.contains("sesi") && spoken.contains("chat")) ||
-                        spoken.contains("diskusi") -> {
-                        if (isAccessibilityMode) HapticHelper.longBuzz() else HapticHelper.shortBuzz()
+                    spoken.contains("obrolan tadi") ||
+                        spoken.contains("chat") ||
+                        spoken.contains("obrolan") -> {
+                        HapticHelper.longBuzz()
                         coroutineScope.launch {
                             quizViewModel.startQuizFromChatHistory()
                         }
                     }
 
                     spoken.contains("topik baru") || spoken.contains("topik") -> {
-                        if (isAccessibilityMode) HapticHelper.doubleBuzz() else HapticHelper.shortBuzz()
+                        HapticHelper.doubleBuzz()
                         quizViewModel.chooseCustomTopicEntry()
-                        voiceStatus = "Masukkan topik baru"
                     }
 
                     else -> {
                         HapticHelper.doubleBuzz()
-                        AudioAssistant.speak("Pilihan belum dikenali. Ucapkan Sesi Chat atau Topik Baru.")
+                        AudioAssistant.speak("Pilihan belum dikenali. Ucapkan obrolan tadi atau topik baru.")
                         AudioAssistant.onUtteranceCompleted = {
-                            if (isActive && uiState.entryState == QuizEntryState.DECISION) {
-                                startListeningDecision()
+                            if (isActive && uiState.entryState == QuizEntryState.CHOOSING_MODE) {
+                                startListeningModeSelection()
                             }
                         }
                     }
+                }
+            },
+            onError = { code ->
+                isListening = false
+                voiceStatus = "Error mikrofon: $code"
+                HapticHelper.doubleBuzz()
+            }
+        )
+    }
+
+    fun startListeningNewTopic() {
+        if (!isActive || uiState.entryState != QuizEntryState.LISTENING_TOPIC || isListening || isLoading) {
+            return
+        }
+
+        AudioAssistant.stop()
+        isListening = true
+        HapticHelper.shortBuzz()
+        voiceStatus = "🎤 Sebutkan topik kuis"
+
+        voiceHelper.startListening(
+            onResult = { spokenText ->
+                isListening = false
+                val topic = spokenText.trim()
+                if (topic.isBlank()) {
+                    HapticHelper.doubleBuzz()
+                    AudioAssistant.speak("Topik belum terdengar. Silakan sebutkan topik baru.")
+                    AudioAssistant.onUtteranceCompleted = {
+                        if (isActive && uiState.entryState == QuizEntryState.LISTENING_TOPIC) {
+                            startListeningNewTopic()
+                        }
+                    }
+                    return@startListening
+                }
+
+                HapticHelper.longBuzz()
+                coroutineScope.launch {
+                    quizViewModel.generateNewQuiz(topic)
                 }
             },
             onError = { code ->
@@ -201,35 +221,50 @@ fun QuizScreen(
             quizViewModel.evaluateEntryDecision()
         } else {
             isListening = false
+            promptedEntryState = null
             AudioAssistant.onUtteranceCompleted = null
         }
     }
 
     LaunchedEffect(uiState.entryState, isActive) {
-        if (!isActive || uiState.entryState != QuizEntryState.DECISION) {
-            decisionPromptPlayed = false
-            return@LaunchedEffect
-        }
+        if (!isActive) return@LaunchedEffect
+        if (promptedEntryState == uiState.entryState) return@LaunchedEffect
 
-        if (!decisionPromptPlayed) {
-            decisionPromptPlayed = true
-            val question = "Anda memiliki sesi tanya jawab yang aktif. Apakah ingin membuat kuis berdasarkan diskusi tadi, atau menentukan topik baru?"
-            AudioAssistant.speak(question)
-            AudioAssistant.onUtteranceCompleted = {
-                if (isActive && uiState.entryState == QuizEntryState.DECISION) {
-                    startListeningDecision()
+        when (uiState.entryState) {
+            QuizEntryState.CHOOSING_MODE -> {
+                promptedEntryState = QuizEntryState.CHOOSING_MODE
+                val prompt = "Selamat datang di kuis. Ingin memulai kuis berdasarkan obrolan tadi, atau memilih topik baru?"
+                AudioAssistant.speak(prompt)
+                AudioAssistant.onUtteranceCompleted = {
+                    if (isActive && uiState.entryState == QuizEntryState.CHOOSING_MODE) {
+                        startListeningModeSelection()
+                    }
                 }
+            }
+
+            QuizEntryState.LISTENING_TOPIC -> {
+                promptedEntryState = QuizEntryState.LISTENING_TOPIC
+                val prompt = "Silakan sebutkan topik baru yang Anda inginkan."
+                AudioAssistant.speak(prompt)
+                AudioAssistant.onUtteranceCompleted = {
+                    if (isActive && uiState.entryState == QuizEntryState.LISTENING_TOPIC) {
+                        startListeningNewTopic()
+                    }
+                }
+            }
+
+            QuizEntryState.NONE -> {
+                promptedEntryState = null
             }
         }
     }
 
-    // Begitu soal dibacakan, mic otomatis dibuka.
     LaunchedEffect(uiState.status, uiState.currentIndex, isActive) {
         if (!isActive) return@LaunchedEffect
 
         when (uiState.status) {
             QuizStatus.PLAYING -> {
-                HapticHelper.shortBuzz()
+                HapticHelper.longBuzz()
                 AudioAssistant.onUtteranceCompleted = {
                     if (isActive && uiState.status == QuizStatus.PLAYING && !isListening) {
                         startListeningAnswer()
@@ -240,7 +275,6 @@ fun QuizScreen(
             QuizStatus.FEEDBACK -> {
                 AudioAssistant.onUtteranceCompleted = {
                     if (isActive) {
-                        HapticHelper.shortBuzz()
                         quizViewModel.nextQuestion()
                     }
                 }
@@ -248,7 +282,7 @@ fun QuizScreen(
 
             QuizStatus.FINISHED,
             QuizStatus.IDLE -> {
-                if (uiState.entryState != QuizEntryState.DECISION) {
+                if (uiState.entryState == QuizEntryState.NONE) {
                     AudioAssistant.onUtteranceCompleted = null
                 }
             }
@@ -318,128 +352,8 @@ fun QuizScreen(
                 color = if (isListening) NeonAmber else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(Modifier.height(12.dp))
-
-            if (uiState.status == QuizStatus.IDLE && uiState.entryState == QuizEntryState.DECISION) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .border(1.dp, NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
-                        .background(SurfaceCard.copy(alpha = 0.55f))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Pilih cara memulai kuis",
-                        color = NeonCyan,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Button(
-                        onClick = {
-                            if (isAccessibilityMode) HapticHelper.longBuzz() else HapticHelper.shortBuzz()
-                            coroutineScope.launch {
-                                quizViewModel.startQuizFromChatHistory()
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonCyan,
-                            contentColor = Color.Black
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("Sesi Chat", fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            if (isAccessibilityMode) HapticHelper.doubleBuzz() else HapticHelper.shortBuzz()
-                            quizViewModel.chooseCustomTopicEntry()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonGreen,
-                            contentColor = Color.Black
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("Topik Baru", fontWeight = FontWeight.Bold)
-                    }
-
-                    Text(
-                        text = "Anda juga bisa memilih lewat suara: ucapkan Sesi Chat atau Topik Baru.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-
-            if (uiState.status == QuizStatus.IDLE && uiState.entryState == QuizEntryState.TOPIC_INPUT) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = topicInput,
-                        onValueChange = { topicInput = it },
-                        modifier = Modifier.weight(1f),
-                        label = { Text("Topik Quiz") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(
-                            onGo = {
-                                coroutineScope.launch {
-                                    HapticHelper.shortBuzz()
-                                    quizViewModel.generateNewQuiz(topicInput)
-                                }
-                            }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonGreen.copy(alpha = 0.8f),
-                            unfocusedBorderColor = NeonGreen.copy(alpha = 0.35f),
-                            focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
-                            unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f),
-                            cursorColor = NeonGreen
-                        )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                HapticHelper.shortBuzz()
-                                quizViewModel.generateNewQuiz(topicInput)
-                            }
-                        },
-                        enabled = !isLoading,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonGreen,
-                            contentColor = Color.Black
-                        )
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.Black
-                            )
-                        } else {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Generate Quiz")
-                        }
-                    }
-                }
-            }
-
             if (errorMsg != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = errorMsg.orEmpty(),
                     color = NeonMagenta,
@@ -460,21 +374,17 @@ fun QuizScreen(
             ) {
                 when (uiState.status) {
                     QuizStatus.IDLE -> {
-                        if (uiState.entryState == QuizEntryState.CHECKING) {
-                            Text(
-                                "Memeriksa konteks sesi untuk memulai kuis...",
-                                color = Color.White,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Text(
-                                "Kuis akan dimulai setelah sumber topik dipilih.",
-                                color = Color.White,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                        val infoText = when (uiState.entryState) {
+                            QuizEntryState.CHOOSING_MODE -> "Menunggu pilihan mode kuis lewat suara."
+                            QuizEntryState.LISTENING_TOPIC -> "Menunggu topik baru dari suara Anda."
+                            QuizEntryState.NONE -> "Menyiapkan kuis..."
                         }
+                        Text(
+                            infoText,
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
 
                     QuizStatus.PLAYING -> {
@@ -558,7 +468,7 @@ fun QuizScreen(
                                     Spacer(Modifier.width(10.dp))
 
                                     Text(
-                                        "Jawab dengan suara: A/B atau nomor jawaban",
+                                        "Mode hands-free aktif. Jawab dengan suara.",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = MaterialTheme.typography.bodySmall,
                                         textAlign = TextAlign.Center
@@ -654,7 +564,7 @@ fun QuizScreen(
                     ) {
                         CircularProgressIndicator(color = NeonGreen, strokeWidth = 3.dp)
                         Text(
-                            "Membuat kuis berdasarkan pilihan Anda...",
+                            "Membuat kuis berdasarkan pilihan suara Anda...",
                             color = Color.White,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium

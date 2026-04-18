@@ -109,13 +109,13 @@ private val qnaJson = Json {
 @OptIn(ExperimentalMaterial3Api::class)
 fun QnaScreen(
     isActive: Boolean = true,
+    chatRepository: ChatRepository,
     chatViewModel: ChatViewModel,
     quizRepository: QuizRepository,
     onNavigateToQuiz: () -> Unit
 ) {
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val chatRepository = remember { ChatRepository(context) }
+    val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val uiState by chatViewModel.uiState.collectAsState()
 
@@ -199,10 +199,10 @@ fun QnaScreen(
 
     fun sendQuestionToBackend(question: String) {
         coroutineScope.launch {
-            val sessionId = uiState.sessionId ?: chatViewModel.ensureSessionId()
+            val sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
             if (sessionId.isNullOrBlank()) {
                 isProcessing = false
-                statusText = "Gagal menyiapkan sesi chat. Coba lagi."
+                statusText = "Sesi belum siap. Gunakan Mulai Sesi Baru dari riwayat."
                 return@launch
             }
 
@@ -317,6 +317,10 @@ fun QnaScreen(
             hasInitializedVoiceFlow = false
             stopMic()
             isProcessing = false
+        } else {
+            coroutineScope.launch {
+                chatViewModel.loadHistoryForCurrentSession(forceReload = false)
+            }
         }
     }
 
@@ -417,7 +421,7 @@ fun QnaScreen(
         if (!isActive || !isAuthenticated || hasInitializedVoiceFlow) return@LaunchedEffect
 
         statusText = "Menyiapkan sesi..."
-        val sessionId = chatViewModel.ensureSessionId()
+        val sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
         if (sessionId.isNullOrBlank()) {
             statusText = "Gagal menyiapkan sesi."
             return@LaunchedEffect
