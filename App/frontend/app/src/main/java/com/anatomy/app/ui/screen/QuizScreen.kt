@@ -150,6 +150,7 @@ fun QuizScreen(
 
         AudioAssistant.stop()
         isListening = true
+        HapticHelper.shortBuzz()
         voiceStatus = "🎤 Ucapkan: Sesi Chat atau Topik Baru"
 
         voiceHelper.startListening(
@@ -537,6 +538,7 @@ fun QuizScreen(
                                             .clickable {
                                                 AudioAssistant.stop()
                                                 if (isListening) {
+                                                    HapticHelper.shortBuzz()
                                                     voiceHelper.stopListening()
                                                     isListening = false
                                                     voiceStatus = "Mikrofon dihentikan"

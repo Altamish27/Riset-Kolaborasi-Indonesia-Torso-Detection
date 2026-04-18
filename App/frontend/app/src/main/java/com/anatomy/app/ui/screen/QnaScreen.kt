@@ -264,6 +264,7 @@ fun QnaScreen(
                 onError = { code ->
                     if (!isActive) return@startListening
                     isListening = false
+                    HapticHelper.doubleBuzz()
                     statusText = "Gagal mendengar (kode: $code). Coba lagi atau ketik."
                 }
             )
@@ -620,6 +621,7 @@ fun QnaScreen(
                                 // Manual interrupt should force-stop any ongoing speech.
                                 AudioAssistant.stop()
                                 if (isListening) {
+                                    HapticHelper.shortBuzz()
                                     stopMic()
                                     statusText = "Mikrofon dihentikan"
                                 } else {

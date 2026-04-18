@@ -51,7 +51,11 @@ class ChatViewModel(
     }
 
     suspend fun ensureSessionId(forceNew: Boolean = false): String? {
-        val sessionId = chatRepository.getOrCreateSessionId(forceNew)
+        val sessionId = if (forceNew) {
+            chatRepository.createSession()
+        } else {
+            _uiState.value.sessionId ?: chatRepository.getActiveSessionId()
+        }
         _uiState.value = _uiState.value.copy(
             sessionId = sessionId,
             launchSessionReady = !sessionId.isNullOrBlank()
@@ -115,7 +119,7 @@ class ChatViewModel(
 
     suspend fun loadHistoryForCurrentSession(forceReload: Boolean = false) {
         val currentState = _uiState.value
-        val sessionId = currentState.sessionId ?: ensureSessionId() ?: return
+        val sessionId = currentState.sessionId ?: chatRepository.getActiveSessionId() ?: return
 
         if (!forceReload && currentState.hasLoadedHistory) {
             return
