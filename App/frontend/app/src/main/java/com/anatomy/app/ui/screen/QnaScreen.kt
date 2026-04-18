@@ -269,10 +269,12 @@ fun QnaScreen(
 
                         AudioAssistant.speak(answer)
                         AudioAssistant.onUtteranceCompleted = {
-                            if (!isActive || isProcessing || isListening) return@onUtteranceCompleted
-                            HapticHelper.shortBuzz()
-                            statusText = "Siap mendengarkan..."
-                            chatViewModel.requestAutoListen()
+                            // Gunakan pengecekan terbalik tanpa return
+                            if (isActive && !isProcessing && !isListening) {
+                                HapticHelper.shortBuzz()
+                                statusText = "Siap mendengarkan..."
+                                chatViewModel.requestAutoListen()
+                            }
                         }
                     }
 
