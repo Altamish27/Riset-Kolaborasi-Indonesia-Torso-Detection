@@ -7,7 +7,6 @@ import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.network.SessionHistoryMessage
 import com.anatomy.app.network.SessionSummary
 import com.anatomy.app.network.VoiceWebSocketClient
-import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.flow.Flow
 
@@ -19,6 +18,10 @@ class ChatRepository(
     private var voiceWebSocket: VoiceWebSocketClient? = null
     private val httpClient = HttpClientFactory.createHttpClient()
     private val apiService by lazy { HttpClientFactory.createApiService(context) }
+
+    private object VolatileSessionHolder {
+        var sessionId: String? = null
+    }
     
     /**
      * Connect to chat WebSocket (now uses unified connection)
@@ -55,7 +58,7 @@ class ChatRepository(
                 return false
             }
 
-            val resolvedSessionId = sessionId ?: TokenManager.getChatSessionId(context)
+            val resolvedSessionId = sessionId ?: VolatileSessionHolder.sessionId
             if (resolvedSessionId.isNullOrBlank()) {
                 Log.e(TAG, "Cannot send message: missing session id")
                 return false
@@ -74,7 +77,7 @@ class ChatRepository(
     suspend fun createSession(): String? {
         return try {
             val resp = apiService.createSession()
-            TokenManager.saveChatSessionId(context, resp.session_id)
+            VolatileSessionHolder.sessionId = resp.session_id
             resp.session_id
         } catch (e: Exception) {
             Log.e(TAG, "Error creating session via HTTP", e)
@@ -82,17 +85,23 @@ class ChatRepository(
         }
     }
 
+    suspend fun createLaunchSession(): String? {
+        return try {
+            val resp = apiService.createSession()
+            VolatileSessionHolder.sessionId = resp.session_id
+            resp.session_id
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating launch session", e)
+            null
+        }
+    }
+
     suspend fun getOrCreateSessionId(forceNew: Boolean = false): String? {
-        if (forceNew) {
-            TokenManager.clearChatSessionId(context)
+        if (forceNew || VolatileSessionHolder.sessionId.isNullOrBlank()) {
+            return createSession()
         }
 
-        val savedSessionId = TokenManager.getChatSessionId(context)
-        if (!savedSessionId.isNullOrBlank()) {
-            return savedSessionId
-        }
-
-        return createSession()
+        return VolatileSessionHolder.sessionId
     }
 
     suspend fun getSessionHistory(sessionId: String): List<SessionHistoryMessage> {
@@ -133,11 +142,15 @@ class ChatRepository(
     }
 
     fun setActiveSessionId(sessionId: String) {
-        TokenManager.saveChatSessionId(context, sessionId)
+        VolatileSessionHolder.sessionId = sessionId
+    }
+
+    fun getActiveSessionId(): String? {
+        return VolatileSessionHolder.sessionId
     }
 
     fun clearPersistedSessionId() {
-        TokenManager.clearChatSessionId(context)
+        VolatileSessionHolder.sessionId = null
     }
     
     /**

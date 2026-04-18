@@ -23,6 +23,7 @@ data class ChatUiState(
     val chatMessages: List<ChatUiMessage> = emptyList(),
     val sessions: List<ChatSessionItem> = emptyList(),
     val isLoadingSessions: Boolean = false,
+    val launchSessionReady: Boolean = false,
     val hasLoadedHistory: Boolean = false,
     val autoListenRequested: Boolean = false
 )
@@ -34,9 +35,27 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    suspend fun initializeLaunchSessionIfNeeded() {
+        val state = _uiState.value
+        if (state.launchSessionReady && !state.sessionId.isNullOrBlank()) {
+            return
+        }
+
+        val sessionId = chatRepository.createLaunchSession()
+        _uiState.value = _uiState.value.copy(
+            sessionId = sessionId,
+            launchSessionReady = !sessionId.isNullOrBlank(),
+            hasLoadedHistory = false,
+            chatMessages = emptyList()
+        )
+    }
+
     suspend fun ensureSessionId(forceNew: Boolean = false): String? {
         val sessionId = chatRepository.getOrCreateSessionId(forceNew)
-        _uiState.value = _uiState.value.copy(sessionId = sessionId)
+        _uiState.value = _uiState.value.copy(
+            sessionId = sessionId,
+            launchSessionReady = !sessionId.isNullOrBlank()
+        )
         return sessionId
     }
 
@@ -86,6 +105,7 @@ class ChatViewModel(
             _uiState.value = _uiState.value.copy(
                 sessionId = newSessionId,
                 chatMessages = emptyList(),
+                launchSessionReady = true,
                 hasLoadedHistory = true
             )
             loadSessions()

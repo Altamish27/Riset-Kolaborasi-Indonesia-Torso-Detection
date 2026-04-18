@@ -91,6 +91,10 @@ fun MainPagerScreen() {
     var showOnboarding by remember { mutableStateOf(isFirstLaunch(context)) }
     var hasSpokenInitial by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        chatViewModel.initializeLaunchSessionIfNeeded()
+    }
+
     // Welcome announcement — ONLY on first launch (non-onboarding) sessions
     LaunchedEffect(Unit) {
         if (!showOnboarding) {
