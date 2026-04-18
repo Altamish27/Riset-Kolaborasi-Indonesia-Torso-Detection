@@ -34,6 +34,8 @@ class QuizViewModel(
     private val _uiState = MutableStateFlow(QuizUiState())
     val uiState: StateFlow<QuizUiState> = _uiState.asStateFlow()
     private var pendingQuizJob: Job? = null
+    val isLoading: StateFlow<Boolean> = quizRepository.isLoading
+    val error: StateFlow<String?> = quizRepository.error
 
     // ── Public API ─────────────────────────────────────────────
 
@@ -166,6 +168,36 @@ class QuizViewModel(
     fun resetQuiz() {
         Log.d(TAG, "Quiz reset to idle")
         _uiState.value = QuizUiState()
+    }
+
+    suspend fun generateNewQuiz(topic: String) {
+        val trimmedTopic = topic.trim()
+        if (trimmedTopic.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                status = QuizStatus.IDLE,
+                statusText = "Topik kuis tidak boleh kosong"
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            status = QuizStatus.IDLE,
+            statusText = "Membuat kuis tentang $trimmedTopic..."
+        )
+
+        val result = quizRepository.generateQuiz(trimmedTopic)
+        result.onSuccess { response ->
+            startQuiz(response.quiz)
+        }.onFailure { e ->
+            _uiState.value = _uiState.value.copy(
+                status = QuizStatus.IDLE,
+                statusText = e.message ?: "Gagal membuat kuis"
+            )
+        }
+    }
+
+    fun clearError() {
+        quizRepository.clearError()
     }
 
     /**

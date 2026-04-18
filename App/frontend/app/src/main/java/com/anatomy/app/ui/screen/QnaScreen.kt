@@ -35,16 +35,22 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -84,6 +90,7 @@ import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import com.anatomy.app.ui.theme.SurfaceCard
 import com.anatomy.app.utils.UnifiedWebSocketManager
+import com.anatomy.app.viewmodel.ChatSessionItem
 import com.anatomy.app.viewmodel.ChatUiMessage
 import com.anatomy.app.viewmodel.ChatViewModel
 import kotlinx.coroutines.flow.collect
@@ -114,17 +121,50 @@ fun QnaScreen(
 
     var isListening by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Siap. Tekan mic untuk mulai.") }
+    var statusText by remember { mutableStateOf("Siap. Menyiapkan sesi...") }
     var textInput by remember { mutableStateOf("") }
     var isAuthenticated by remember { mutableStateOf(false) }
     var reconnectNonce by remember { mutableStateOf(0) }
+    var hasInitializedVoiceFlow by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
+
+    fun queueGreetingAndAutoListen(greeting: String) {
+        AudioAssistant.stop()
+        AudioAssistant.speak(greeting)
+        AudioAssistant.onUtteranceCompleted = {
+            if (!isActive || isListening || isProcessing) return@onUtteranceCompleted
+            HapticHelper.shortBuzz()
+            statusText = "🎤 Mendengarkan..."
+            chatViewModel.requestAutoListen()
+        }
+    }
+
+    fun startNewSessionWithVoiceCue() {
+        coroutineScope.launch {
+            isProcessing = true
+            HapticHelper.doubleBuzz()
+            statusText = "Membuat sesi baru..."
+            val sessionId = chatViewModel.createNewSession()
+            isProcessing = false
+
+            if (sessionId.isNullOrBlank()) {
+                statusText = "Gagal membuat sesi baru."
+                AudioAssistant.stop()
+                AudioAssistant.speak("Maaf, sesi baru gagal dibuat.")
+                return@launch
+            }
+
+            statusText = "Sesi baru siap"
+            queueGreetingAndAutoListen("Sesi baru siap. Silakan ajukan pertanyaan.")
+        }
+    }
 
     fun sendQuestionToBackend(question: String) {
         coroutineScope.launch {
-            val sessionId = uiState.sessionId ?: chatViewModel.ensureSessionId()
+            val sessionId = uiState.sessionId ?: chatViewModel.resumeLatestSessionOrCreate()
             if (sessionId.isNullOrBlank()) {
                 isProcessing = false
                 statusText = "Gagal menyiapkan sesi chat. Coba lagi."
@@ -146,7 +186,7 @@ fun QnaScreen(
         if (isProcessing || !isActive) return
 
         try {
-            // Interrupt ongoing speech before opening mic.
+            // Always interrupt speech before opening mic to avoid overlap.
             AudioAssistant.stop()
             isListening = true
             HapticHelper.shortBuzz()
@@ -156,15 +196,22 @@ fun QnaScreen(
                 onResult = { result ->
                     if (!isActive) return@startListening
                     isListening = false
-                    if (result.isBlank()) {
+                    val spoken = result.trim()
+                    if (spoken.isBlank()) {
                         statusText = "Tidak terdengar. Tekan mic untuk coba lagi."
+                        return@startListening
+                    }
+
+                    val normalized = spoken.lowercase()
+                    if (normalized.contains("sesi baru")) {
+                        startNewSessionWithVoiceCue()
                         return@startListening
                     }
 
                     isProcessing = true
                     statusText = "Memproses..."
-                    chatViewModel.appendUserMessage(result)
-                    sendQuestionToBackend(result)
+                    chatViewModel.appendUserMessage(spoken)
+                    sendQuestionToBackend(spoken)
                 },
                 onError = { code ->
                     if (!isActive) return@startListening
@@ -210,12 +257,33 @@ fun QnaScreen(
         AudioAssistant.onUtteranceCompleted = null
     }
 
-    LaunchedEffect(isActive, reconnectNonce) {
+    fun switchToSession(item: ChatSessionItem) {
+        coroutineScope.launch {
+            HapticHelper.shortBuzz()
+            statusText = "Memuat ${item.title}..."
+            chatViewModel.switchToSession(item.sessionId)
+            drawerState.close()
+            statusText = "Sesi dipulihkan"
+            queueGreetingAndAutoListen("${item.title} dipulihkan. Silakan lanjut bertanya.")
+        }
+    }
+
+    LaunchedEffect(isActive) {
         if (!isActive) {
+            hasInitializedVoiceFlow = false
             stopMic()
             isProcessing = false
-            return@LaunchedEffect
         }
+    }
+
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) {
+            chatViewModel.loadSessions()
+        }
+    }
+
+    LaunchedEffect(isActive, reconnectNonce) {
+        if (!isActive) return@LaunchedEffect
 
         statusText = "Menghubungkan ke backend..."
         val flow = chatRepository.connectChat()
@@ -226,12 +294,6 @@ fun QnaScreen(
 
         if (UnifiedWebSocketManager.isAuthenticated()) {
             isAuthenticated = true
-            statusText = "Terhubung. Menyiapkan sesi chat..."
-            val session = chatViewModel.ensureSessionId()
-            if (!session.isNullOrBlank()) {
-                chatViewModel.loadHistoryForCurrentSession(forceReload = true)
-                statusText = "Siap. Tekan mic untuk mulai."
-            }
         }
 
         try {
@@ -271,21 +333,14 @@ fun QnaScreen(
                         AudioAssistant.onUtteranceCompleted = {
                             if (!isActive || isProcessing || isListening) return@onUtteranceCompleted
                             HapticHelper.shortBuzz()
-                            statusText = "Siap mendengarkan..."
+                            statusText = "🎤 Mendengarkan..."
                             chatViewModel.requestAutoListen()
                         }
                     }
 
                     response.action == "authenticated" -> {
                         isAuthenticated = true
-                        statusText = "Autentikasi berhasil, menyiapkan sesi..."
-                        val session = chatViewModel.ensureSessionId()
-                        if (session.isNullOrBlank()) {
-                            statusText = "Gagal menyiapkan sesi chat."
-                        } else {
-                            chatViewModel.loadHistoryForCurrentSession(forceReload = true)
-                            statusText = "Siap. Tekan mic untuk mulai."
-                        }
+                        statusText = "Autentikasi berhasil"
                     }
 
                     response.action == "connected" -> {
@@ -300,13 +355,30 @@ fun QnaScreen(
         }
     }
 
-    LaunchedEffect(isActive, isAuthenticated) {
-        if (isActive && isAuthenticated) {
-            val sessionId = chatViewModel.ensureSessionId()
-            if (!sessionId.isNullOrBlank()) {
-                chatViewModel.loadHistoryForCurrentSession(forceReload = false)
-            }
+    LaunchedEffect(isActive, isAuthenticated, hasInitializedVoiceFlow) {
+        if (!isActive || !isAuthenticated || hasInitializedVoiceFlow) return@LaunchedEffect
+
+        statusText = "Menyiapkan sesi dan riwayat..."
+        val sessionId = chatViewModel.resumeLatestSessionOrCreate()
+        if (sessionId.isNullOrBlank()) {
+            statusText = "Gagal menyiapkan sesi."
+            return@LaunchedEffect
         }
+
+        chatViewModel.loadHistoryForCurrentSession(forceReload = true)
+        hasInitializedVoiceFlow = true
+
+        val latestState = chatViewModel.uiState.value
+
+        val greeting = if (latestState.chatMessages.isEmpty()) {
+            "Halo, saya asisten anatomi Anda. Silakan ajukan pertanyaan."
+        } else {
+            "Sesi terakhir berhasil dipulihkan. Silakan lanjutkan percakapan."
+        }
+
+        HapticHelper.shortBuzz()
+        statusText = "Menyapa pengguna..."
+        queueGreetingAndAutoListen(greeting)
     }
 
     LaunchedEffect(uiState.autoListenRequested, isActive, isProcessing, isListening) {
@@ -349,212 +421,326 @@ fun QnaScreen(
         label = "mic_glow"
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.background,
-                        SurfaceCard.copy(alpha = 0.15f),
-                        MaterialTheme.colorScheme.background
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.fillMaxWidth(0.82f),
+                drawerContainerColor = SurfaceCard
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Riwayat Sesi",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = NeonCyan,
+                        fontWeight = FontWeight.Bold
                     )
-                )
-            )
-            .imePadding()
-            .semantics { contentDescription = "Halaman Mode Tanya Jawab" }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 20.dp, start = 20.dp, end = 20.dp, bottom = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                "Mode Tanya Jawab",
-                style = MaterialTheme.typography.headlineMedium,
-                color = NeonCyan,
-                modifier = Modifier.semantics { heading() }
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "Tanyakan apa saja tentang anatomi torso",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
-            )
-        }
+                    Spacer(Modifier.height(12.dp))
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (uiState.chatMessages.isEmpty()) {
-                item {
-                    Box(
-                        Modifier
+                    Row(
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(NeonGreen.copy(alpha = 0.16f))
+                            .border(1.dp, NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                            .clickable {
+                                HapticHelper.doubleBuzz()
+                                startNewSessionWithVoiceCue()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.SmartToy,
-                                null,
-                                tint = NeonCyan.copy(alpha = 0.25f),
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "Tanyakan tentang organ tubuh\natau ketik di kolom bawah",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                textAlign = TextAlign.Center
-                            )
+                        Icon(Icons.Default.AddCircle, contentDescription = null, tint = NeonGreen)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sesi Baru", color = Color.White)
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (uiState.isLoadingSessions) {
+                        Text(
+                            text = "Memuat daftar sesi...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (uiState.sessions.isEmpty() && !uiState.isLoadingSessions) {
+                        Text(
+                            text = "Belum ada sesi tersimpan.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(uiState.sessions) { session ->
+                            val isSelected = uiState.sessionId == session.sessionId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) NeonCyan.copy(alpha = 0.16f)
+                                        else SurfaceCard.copy(alpha = 0.5f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) NeonCyan.copy(alpha = 0.5f)
+                                        else Color.White.copy(alpha = 0.2f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { switchToSession(session) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.SmartToy, contentDescription = null, tint = NeonCyan)
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(session.title, color = Color.White, fontSize = 13.sp)
+                                    Text(
+                                        session.updatedAt ?: session.createdAt ?: "Tanpa timestamp",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            items(uiState.chatMessages) { msg ->
-                ChatBubble(message = msg)
-            }
-            item { Spacer(Modifier.height(4.dp)) }
         }
-
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.background,
+                            SurfaceCard.copy(alpha = 0.15f),
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
+                .imePadding()
+                .semantics { contentDescription = "Halaman Mode Tanya Jawab" }
         ) {
             Row(
-                Modifier
+                modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 4.dp, start = 4.dp),
+                    .padding(top = 16.dp, start = 12.dp, end = 20.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isListening -> MicActive
-                                isProcessing -> NeonAmber
-                                else -> NeonGreen
-                            }
-                        )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    statusText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        isListening -> NeonAmber
-                        isProcessing -> NeonAmber
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    fontSize = 11.sp
-                )
-            }
-
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isListening) MicActive.copy(alpha = micGlow)
-                            else MicIdle
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            if (isListening) stopMic() else doStartListening()
-                        }
-                        .semantics {
-                            contentDescription = if (isListening)
-                                "Mikrofon aktif. Ketuk untuk berhenti."
-                            else "Mikrofon mati. Ketuk untuk mulai."
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
-                        contentDescription = null,
-                        tint = if (isListening) Color.White else NeonCyan,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .then(if (isListening) Modifier.scale(micScale) else Modifier)
-                    )
+                IconButton(onClick = {
+                    HapticHelper.shortBuzz()
+                    coroutineScope.launch {
+                        drawerState.open()
+                    }
+                }) {
+                    Icon(Icons.Default.Menu, contentDescription = "Buka menu sesi", tint = NeonCyan)
                 }
 
-                Spacer(Modifier.width(8.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Mode Tanya Jawab",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = NeonCyan,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Voice-first untuk pengguna tunanetra",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Spacer(Modifier.width(48.dp))
+            }
 
-                OutlinedTextField(
-                    value = textInput,
-                    onValueChange = { textInput = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    placeholder = {
-                        Text(
-                            "Ketik pertanyaan...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            fontSize = 12.sp
-                        )
-                    },
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        color = Color.White,
-                        fontSize = 13.sp
-                    ),
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
-                        cursorColor = NeonCyan,
-                        focusedContainerColor = SurfaceCard.copy(alpha = 0.5f),
-                        unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f)
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (textInput.isNotBlank()) {
-                                val q = textInput.trim()
-                                textInput = ""
-                                keyboardController?.hide()
-                                processTypedQuestion(q)
-                            }
-                        }
-                    ),
-                    trailingIcon = {
-                        if (textInput.isNotBlank()) {
-                            IconButton(onClick = {
-                                val q = textInput.trim()
-                                textInput = ""
-                                keyboardController?.hide()
-                                processTypedQuestion(q)
-                            }) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (uiState.chatMessages.isEmpty()) {
+                    item {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Kirim",
-                                    tint = NeonCyan
+                                    Icons.Default.SmartToy,
+                                    null,
+                                    tint = NeonCyan.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "Katakan pertanyaan Anda\natau ketik di kolom bawah",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
-                )
+                }
+
+                items(uiState.chatMessages) { msg ->
+                    ChatBubble(message = msg)
+                }
+                item { Spacer(Modifier.height(4.dp)) }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp, start = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isListening -> MicActive
+                                    isProcessing -> NeonAmber
+                                    else -> NeonGreen
+                                }
+                            )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            isListening -> NeonAmber
+                            isProcessing -> NeonAmber
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontSize = 11.sp
+                    )
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isListening) MicActive.copy(alpha = micGlow)
+                                else MicIdle
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                // Manual interrupt is always allowed to force-stop current speech.
+                                if (isListening) {
+                                    stopMic()
+                                    statusText = "Mikrofon dihentikan"
+                                } else {
+                                    doStartListening()
+                                }
+                            }
+                            .semantics {
+                                contentDescription = if (isListening) {
+                                    "Mikrofon aktif. Ketuk untuk berhenti"
+                                } else {
+                                    "Mikrofon mati. Ketuk untuk mulai"
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
+                            contentDescription = null,
+                            tint = if (isListening) Color.White else NeonCyan,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .then(if (isListening) Modifier.scale(micScale) else Modifier)
+                        )
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    OutlinedTextField(
+                        value = textInput,
+                        onValueChange = { textInput = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        placeholder = {
+                            Text(
+                                "Ketik pertanyaan...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                fontSize = 12.sp
+                            )
+                        },
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = Color.White,
+                            fontSize = 13.sp
+                        ),
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
+                            cursorColor = NeonCyan,
+                            focusedContainerColor = SurfaceCard.copy(alpha = 0.5f),
+                            unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f)
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (textInput.isNotBlank()) {
+                                    val q = textInput.trim()
+                                    textInput = ""
+                                    keyboardController?.hide()
+                                    processTypedQuestion(q)
+                                }
+                            }
+                        ),
+                        trailingIcon = {
+                            if (textInput.isNotBlank()) {
+                                IconButton(onClick = {
+                                    val q = textInput.trim()
+                                    textInput = ""
+                                    keyboardController?.hide()
+                                    processTypedQuestion(q)
+                                }) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Kirim",
+                                        tint = NeonCyan
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
     }

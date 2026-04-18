@@ -11,9 +11,18 @@ data class ChatUiMessage(
     val timestamp: String? = null
 )
 
+data class ChatSessionItem(
+    val sessionId: String,
+    val title: String,
+    val createdAt: String? = null,
+    val updatedAt: String? = null
+)
+
 data class ChatUiState(
     val sessionId: String? = null,
     val chatMessages: List<ChatUiMessage> = emptyList(),
+    val sessions: List<ChatSessionItem> = emptyList(),
+    val isLoadingSessions: Boolean = false,
     val hasLoadedHistory: Boolean = false,
     val autoListenRequested: Boolean = false
 )
@@ -29,6 +38,59 @@ class ChatViewModel(
         val sessionId = chatRepository.getOrCreateSessionId(forceNew)
         _uiState.value = _uiState.value.copy(sessionId = sessionId)
         return sessionId
+    }
+
+    suspend fun loadSessions() {
+        _uiState.value = _uiState.value.copy(isLoadingSessions = true)
+        val sessions = chatRepository.fetchSessions()
+            .sortedByDescending { it.updated_at ?: it.created_at ?: "" }
+            .map {
+                ChatSessionItem(
+                    sessionId = it.session_id,
+                    title = it.title?.takeIf { title -> title.isNotBlank() }
+                        ?: "Sesi ${it.session_id.takeLast(6)}",
+                    createdAt = it.created_at,
+                    updatedAt = it.updated_at
+                )
+            }
+
+        _uiState.value = _uiState.value.copy(
+            sessions = sessions,
+            isLoadingSessions = false
+        )
+    }
+
+    suspend fun resumeLatestSessionOrCreate(): String? {
+        val sessionId = chatRepository.resumeLastSessionIdOrCreate()
+        _uiState.value = _uiState.value.copy(
+            sessionId = sessionId,
+            hasLoadedHistory = false
+        )
+        loadSessions()
+        return sessionId
+    }
+
+    suspend fun switchToSession(sessionId: String) {
+        chatRepository.setActiveSessionId(sessionId)
+        _uiState.value = _uiState.value.copy(
+            sessionId = sessionId,
+            hasLoadedHistory = false
+        )
+        loadHistoryForCurrentSession(forceReload = true)
+        loadSessions()
+    }
+
+    suspend fun createNewSession(): String? {
+        val newSessionId = chatRepository.createSession()
+        if (newSessionId != null) {
+            _uiState.value = _uiState.value.copy(
+                sessionId = newSessionId,
+                chatMessages = emptyList(),
+                hasLoadedHistory = true
+            )
+            loadSessions()
+        }
+        return newSessionId
     }
 
     suspend fun loadHistoryForCurrentSession(forceReload: Boolean = false) {

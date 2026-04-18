@@ -44,6 +44,14 @@ data class SessionHistoryResponse(
     val messages: List<SessionHistoryMessage> = emptyList()
 )
 
+@Serializable
+data class SessionSummary(
+    val session_id: String,
+    val title: String? = null,
+    val created_at: String? = null,
+    val updated_at: String? = null
+)
+
 /**
  * Chat Models
  */

@@ -36,6 +36,12 @@ interface ApiService {
     @POST("/chat/sessions")
     suspend fun createSession(): SessionResponse
 
+    @GET("/chat/sessions")
+    suspend fun listSessions(): List<SessionSummary>
+
+    @GET("/sessions")
+    suspend fun listSessionsLegacy(): List<SessionSummary>
+
     @GET("/chat/sessions/{session_id}/history")
     suspend fun getSessionHistory(
         @Path("session_id") sessionId: String
