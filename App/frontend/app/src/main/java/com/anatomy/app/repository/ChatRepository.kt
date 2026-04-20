@@ -3,8 +3,9 @@ package com.anatomy.app.repository
 import android.content.Context
 import android.util.Log
 import com.anatomy.app.network.ChatResponse
-import com.anatomy.app.network.ChatWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
+import com.anatomy.app.network.SessionHistoryMessage
+import com.anatomy.app.network.SessionSummary
 import com.anatomy.app.network.VoiceWebSocketClient
 import com.anatomy.app.utils.TokenManager
 import com.anatomy.app.utils.UnifiedWebSocketManager
@@ -15,9 +16,13 @@ class ChatRepository(
 ) {
     
     private val TAG = "ChatRepository"
-    private var chatWebSocket: ChatWebSocketClient? = null
     private var voiceWebSocket: VoiceWebSocketClient? = null
     private val httpClient = HttpClientFactory.createHttpClient()
+    private val apiService by lazy { HttpClientFactory.createApiService(context) }
+
+    private object VolatileSessionHolder {
+        var sessionId: String? = null
+    }
     
     /**
      * Connect to chat WebSocket (now uses unified connection)
@@ -29,28 +34,13 @@ class ChatRepository(
                 return UnifiedWebSocketManager.getMessages()
             }
 
-            // Create session via HTTP first (per API.md) to obtain session_id
-            val api = HttpClientFactory.createApiService(context)
-            val sessionResp = try {
-                api.createSession()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to create session via HTTP", e)
-                null
-            }
-
-            if (sessionResp == null) {
-                Log.e(TAG, "Unable to create chat session before websocket connect")
-                return null
-            }
-
             val token = TokenManager.getAccessToken(context)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "No access token available for chat connection")
                 return null
             }
 
-            // Connect to unified WebSocket after obtaining session id
-            Log.d(TAG, "Connecting to unified WebSocket for chat (session: ${sessionResp.session_id})")
+            Log.d(TAG, "Connecting to unified WebSocket for chat")
             UnifiedWebSocketManager.connect(context, token)
             UnifiedWebSocketManager.getMessages()
         } catch (e: Exception) {
@@ -68,8 +58,14 @@ class ChatRepository(
                 Log.e(TAG, "Cannot send empty message")
                 return false
             }
+
+            val resolvedSessionId = sessionId ?: VolatileSessionHolder.sessionId
+            if (resolvedSessionId.isNullOrBlank()) {
+                Log.e(TAG, "Cannot send message: missing session id")
+                return false
+            }
             
-            UnifiedWebSocketManager.sendChatMessage(sessionId, content)
+            UnifiedWebSocketManager.sendChatMessage(resolvedSessionId, content)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending chat message", e)
             false
@@ -81,19 +77,87 @@ class ChatRepository(
      */
     suspend fun createSession(): String? {
         return try {
-            val api = HttpClientFactory.createApiService(context)
-            val resp = api.createSession()
+            val resp = apiService.createSession()
+            VolatileSessionHolder.sessionId = resp.session_id
             resp.session_id
         } catch (e: Exception) {
             Log.e(TAG, "Error creating session via HTTP", e)
             null
         }
     }
+
+    suspend fun createLaunchSession(): String? {
+        return try {
+            val resp = apiService.createSession()
+            VolatileSessionHolder.sessionId = resp.session_id
+            resp.session_id
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating launch session", e)
+            null
+        }
+    }
+
+    suspend fun getOrCreateSessionId(forceNew: Boolean = false): String? {
+        if (forceNew || VolatileSessionHolder.sessionId.isNullOrBlank()) {
+            return createSession()
+        }
+
+        return VolatileSessionHolder.sessionId
+    }
+
+    suspend fun getSessionHistory(sessionId: String): List<SessionHistoryMessage> {
+        return try {
+            apiService.getSessionHistory(sessionId.toString()).messages
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching chat history", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchSessions(): List<SessionSummary> {
+        return try {
+            apiService.listSessions()
+        } catch (e: Exception) {
+            Log.w(TAG, "Primary sessions endpoint failed, trying legacy path", e)
+            try {
+                apiService.listSessionsLegacy()
+            } catch (legacyError: Exception) {
+                Log.e(TAG, "Error fetching sessions list", legacyError)
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun resumeLastSessionIdOrCreate(): String? {
+        val sessions = fetchSessions()
+        val latest = sessions.maxByOrNull {
+            it.updated_at ?: it.created_at ?: ""
+        }
+
+        if (latest != null) {
+            setActiveSessionId(latest.session_id)
+            return latest.session_id
+        }
+
+        return createSession()
+    }
+
+    fun setActiveSessionId(sessionId: String) {
+        VolatileSessionHolder.sessionId = sessionId
+    }
+
+    fun getActiveSessionId(): String? {
+        return VolatileSessionHolder.sessionId
+    }
+
+    fun clearPersistedSessionId() {
+        VolatileSessionHolder.sessionId = null
+    }
     
     /**
-     * List all sessions (now uses unified connection)
+     * List all sessions via WebSocket (legacy helper).
      */
-    fun listSessions(): Boolean {
+    fun listSessionsWs(): Boolean {
         return UnifiedWebSocketManager.listSessions()
     }
     
@@ -101,10 +165,7 @@ class ChatRepository(
      * Get chat history for a session
      */
     fun getHistory(sessionId: String): Boolean {
-        return chatWebSocket?.send(mapOf(
-            "action" to "get_history",
-            "session_id" to sessionId
-        )) == true
+        return !sessionId.isBlank()
     }
     
     /**

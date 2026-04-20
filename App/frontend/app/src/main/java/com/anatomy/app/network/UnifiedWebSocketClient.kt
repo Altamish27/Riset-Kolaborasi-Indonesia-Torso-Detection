@@ -251,6 +251,15 @@ class UnifiedWebSocketClient(private val httpClient: OkHttpClient) {
     
     fun isWebSocketAuthenticated(): Boolean = isAuthenticated
     
+    /**
+     * Send application-level ping to keep WebSocket alive.
+     * Can be called externally (e.g. from QuizViewModel) in addition to the
+     * automatic ping loop started on authentication.
+     */
+    fun sendPing(): Boolean {
+        return send(mapOf("action" to "ping"))
+    }
+
     fun disconnect() {
         try {
             webSocket?.close(1000, "Client disconnect")

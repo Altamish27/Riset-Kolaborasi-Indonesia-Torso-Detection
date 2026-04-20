@@ -1,5 +1,6 @@
 package com.anatomy.app.ui.screen
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -15,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,21 +36,25 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,143 +79,150 @@ import com.anatomy.app.helper.AudioAssistant
 import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.network.ChatResponse
+import com.anatomy.app.network.QuizGameData
 import com.anatomy.app.repository.ChatRepository
-import com.anatomy.app.utils.TokenManager
-import com.anatomy.app.utils.UnifiedWebSocketManager
+import com.anatomy.app.repository.QuizRepository
 import com.anatomy.app.ui.theme.MicActive
 import com.anatomy.app.ui.theme.MicIdle
 import com.anatomy.app.ui.theme.NeonAmber
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import com.anatomy.app.ui.theme.SurfaceCard
-import kotlinx.coroutines.delay
+import com.anatomy.app.utils.UnifiedWebSocketManager
+import com.anatomy.app.viewmodel.ChatSessionItem
+import com.anatomy.app.viewmodel.ChatUiMessage
+import com.anatomy.app.viewmodel.ChatViewModel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import android.util.Log
-/**
- * ChatMessage — represents one bubble in the conversation.
- */
-data class ChatMessage(
-    val text: String,
-    val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
-)
 
-/**
- * Page 2 — "Mode Tanya Jawab"
- *
- * STABILITY FIXES:
- *   1. Auto-listen triggers via LaunchedEffect(isActive) with a delay to ensure
- *      the page TTS finishes, then directly starts mic (no frozen state).
- *   2. stopListening() is always called before starting a new session.
- *   3. Mic button is integrated into the bottom input bar (no overlap with FAB).
- *   4. Speaker toggle is handled by the global FAB in MainPagerScreen (top-level).
- */
+private val qnaJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+}
+
 @Composable
-fun QnaScreen(isActive: Boolean = true) {
-    val context = LocalContext.current
+@OptIn(ExperimentalMaterial3Api::class)
+fun QnaScreen(
+    isActive: Boolean = true,
+    chatRepository: ChatRepository,
+    chatViewModel: ChatViewModel,
+    quizRepository: QuizRepository,
+    onNavigateToQuiz: () -> Unit
+) {
     val coroutineScope = rememberCoroutineScope()
-    val chatRepository = remember { ChatRepository(context) }
+    val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val uiState by chatViewModel.uiState.collectAsState()
 
     var isListening by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Siap mendengarkan") }
+    var statusText by remember { mutableStateOf("Menyiapkan sesi baru...") }
     var textInput by remember { mutableStateOf("") }
     var isAuthenticated by remember { mutableStateOf(false) }
-    var isSessionCreating by remember { mutableStateOf(false) }
-    var sessionId by remember { mutableStateOf<String?>(null) }
-    var pendingQuestion by remember { mutableStateOf<String?>(null) }
-    var lastSessionRequestAt by remember { mutableStateOf(0L) }
-    var sessionCreateAttempts by remember { mutableStateOf(0) }
     var reconnectNonce by remember { mutableStateOf(0) }
-    var reconnectCycles by remember { mutableStateOf(0) }
-    var authReconnectAttempts by remember { mutableStateOf(0) }
-    var connectionTimeout by remember { mutableStateOf(false) }
-    var processingStartedAt by remember { mutableStateOf(0L) }
-    val chatHistory = remember { mutableStateListOf<ChatMessage>() }
-    val listState = rememberLazyListState()
+    var hasInitializedVoiceFlow by remember { mutableStateOf(false) }
+    var showHistorySheet by remember { mutableStateOf(false) }
 
+    val listState = rememberLazyListState()
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
 
-    fun requestSessionIfNeeded(force: Boolean = false) {
-        if (!isAuthenticated) return
-        if (!sessionId.isNullOrBlank()) return
-
-        val now = System.currentTimeMillis()
-        if (!force && now - lastSessionRequestAt < 1500L) return
-
-        lastSessionRequestAt = now
-        isSessionCreating = true
-        sessionCreateAttempts += 1
-        statusText = "Menyiapkan sesi chat..."
-
-        // Create session via HTTP asynchronously
+    fun openHistorySheet() {
         coroutineScope.launch {
-            val newSession = try {
-                chatRepository.createSession()
-            } catch (e: Exception) {
-                null
-            }
+            HapticHelper.shortBuzz()
+            chatViewModel.loadSessions()
+            showHistorySheet = true
+        }
+    }
 
-            if (newSession.isNullOrBlank()) {
-                statusText = "Koneksi chat belum siap, mencoba sambung ulang..."
-                isSessionCreating = false
-                reconnectNonce += 1
-            } else {
-                sessionId = newSession
-                isSessionCreating = false
-                sessionCreateAttempts = 0
-                statusText = "Sesi chat siap"
-                val queued = pendingQuestion
-                if (!queued.isNullOrBlank()) {
-                    pendingQuestion = null
-                    statusText = "Mengirim pertanyaan ke backend..."
-                    val sent = chatRepository.sendChatMessage(sessionId, queued)
-                    if (!sent) {
-                        pendingQuestion = queued
-                        statusText = "Koneksi chat terputus, menyambung ulang..."
-                        reconnectNonce += 1
-                    }
-                }
+    fun queueGreetingAndAutoListen(greeting: String) {
+        AudioAssistant.stop()
+        AudioAssistant.speak(greeting)
+        AudioAssistant.onUtteranceCompleted = {
+            if (isActive && !isListening && !isProcessing) {
+                HapticHelper.shortBuzz()
+                statusText = "🎤 Mendengarkan..."
+                chatViewModel.requestAutoListen()
             }
         }
     }
 
-    fun failCurrentRequest(message: String) {
+    fun startNewSessionWithVoiceCue() {
+        coroutineScope.launch {
+            isProcessing = true
+            HapticHelper.doubleBuzz()
+            statusText = "Membuat sesi baru..."
+            val sessionId = chatViewModel.createNewSession()
+            isProcessing = false
+
+            if (sessionId.isNullOrBlank()) {
+                statusText = "Gagal membuat sesi baru."
+                AudioAssistant.stop()
+                AudioAssistant.speak("Maaf, sesi baru gagal dibuat.")
+                return@launch
+            }
+
+            statusText = "Sesi baru siap"
+            queueGreetingAndAutoListen("Sesi baru siap. Silakan ajukan pertanyaan.")
+        }
+    }
+
+    fun switchToSession(item: ChatSessionItem) {
+        coroutineScope.launch {
+            HapticHelper.shortBuzz()
+            statusText = "Memuat ${item.title}..."
+            chatViewModel.switchToSession(item.sessionId)
+            showHistorySheet = false
+            statusText = "Sesi dipulihkan"
+            queueGreetingAndAutoListen("${item.title} dipulihkan. Silakan lanjut bertanya.")
+        }
+    }
+
+    fun handoffToQuizPage() {
+        stopMic()
         isProcessing = false
-        statusText = message
+        val confirmation = "Baik, mari kita mulai kuisnya di halaman kuis."
+        statusText = confirmation
+        AudioAssistant.stop()
+        AudioAssistant.speak(confirmation)
+        AudioAssistant.onUtteranceCompleted = {
+            if (isActive) {
+                HapticHelper.doubleBuzz()
+                onNavigateToQuiz()
+            }
+        }
     }
 
     fun sendQuestionToBackend(question: String) {
-        if (!isAuthenticated) {
-            pendingQuestion = question
-            failCurrentRequest("Menghubungkan ke backend...")
-            return
-        }
+        coroutineScope.launch {
+            val sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
+            if (sessionId.isNullOrBlank()) {
+                isProcessing = false
+                statusText = "Sesi belum siap. Gunakan Mulai Sesi Baru dari riwayat."
+                return@launch
+            }
 
-        if (sessionId.isNullOrBlank()) {
-            pendingQuestion = question
-            requestSessionIfNeeded(force = true)
-            return
-        }
-        val sent = chatRepository.sendChatMessage(sessionId, question)
-        if (!sent) {
-            pendingQuestion = question
-            failCurrentRequest("Koneksi chat terputus, menyambung ulang...")
-            reconnectNonce += 1
+            val sent = chatRepository.sendChatMessage(sessionId, question)
+            if (!sent) {
+                isProcessing = false
+                statusText = "Koneksi chat terputus, menyambung ulang..."
+                reconnectNonce += 1
+            } else {
+                statusText = "Memproses jawaban..."
+            }
         }
     }
 
-    /** Start the mic with proper cleanup. */
     fun doStartListening() {
         if (isProcessing || !isActive) return
 
         try {
+            // Interrupt TTS before mic activation.
+            AudioAssistant.stop()
             isListening = true
             HapticHelper.shortBuzz()
             statusText = "🎤 Mendengarkan..."
@@ -218,28 +231,41 @@ fun QnaScreen(isActive: Boolean = true) {
                 onResult = { result ->
                     if (!isActive) return@startListening
                     isListening = false
-                    if (result.isBlank()) {
-                        if (isActive) statusText = "Tidak terdengar. Tekan mic untuk coba lagi."
+                    val spoken = result.trim()
+                    if (spoken.isBlank()) {
+                        statusText = "Tidak terdengar. Tekan mic untuk coba lagi."
                         return@startListening
                     }
-                    // Process the recognized question
-                    isProcessing = true
-                    processingStartedAt = System.currentTimeMillis()
-                    if (isActive) statusText = "Memproses..."
-                    chatHistory.add(ChatMessage(text = result, isUser = true))
 
-                    coroutineScope.launch {
-                        if (isActive) {
-                            listState.animateScrollToItem((chatHistory.size - 1).coerceAtLeast(0))
-                            sendQuestionToBackend(result)
+                    val normalized = spoken.lowercase()
+                    when {
+                        normalized.contains("buka riwayat") -> {
+                            openHistorySheet()
+                            return@startListening
+                        }
+
+                        normalized.contains("mulai sesi baru") ||
+                            normalized.contains("sesi baru") -> {
+                            startNewSessionWithVoiceCue()
+                            return@startListening
+                        }
+
+                        normalized.contains("quiz") || normalized.contains("kuis") -> {
+                            handoffToQuizPage()
+                            return@startListening
                         }
                     }
+
+                    isProcessing = true
+                    statusText = "Memproses..."
+                    chatViewModel.appendUserMessage(spoken)
+                    sendQuestionToBackend(spoken)
                 },
                 onError = { code ->
                     if (!isActive) return@startListening
                     isListening = false
-                    Log.e("QnaScreen", "Voice recognition error code: $code")
-                    if (isActive) statusText = "Gagal mendengar (kode: $code). Coba lagi atau ketik."
+                    HapticHelper.doubleBuzz()
+                    statusText = "Gagal mendengar (kode: $code). Coba lagi atau ketik."
                 }
             )
         } catch (e: Exception) {
@@ -249,26 +275,26 @@ fun QnaScreen(isActive: Boolean = true) {
         }
     }
 
-    /** Process a typed question. */
     fun processTypedQuestion(question: String) {
         if (question.isBlank() || isProcessing) return
 
+        val normalized = question.lowercase()
+        if (normalized.contains("quiz") || normalized.contains("kuis")) {
+            handoffToQuizPage()
+            return
+        }
+
         try {
-            // Stop mic if active so it doesn't interfere
             if (isListening) {
                 voiceHelper.stopListening()
                 isListening = false
             }
+            AudioAssistant.stop()
 
             isProcessing = true
-            processingStartedAt = System.currentTimeMillis()
             statusText = "Memproses..."
-            chatHistory.add(ChatMessage(text = question, isUser = true))
-
-            coroutineScope.launch {
-                listState.animateScrollToItem((chatHistory.size - 1).coerceAtLeast(0))
-                sendQuestionToBackend(question)
-            }
+            chatViewModel.appendUserMessage(question)
+            sendQuestionToBackend(question)
         } catch (e: Exception) {
             Log.e("QnaScreen", "Exception in processTypedQuestion", e)
             isProcessing = false
@@ -283,352 +309,173 @@ fun QnaScreen(isActive: Boolean = true) {
             Log.e("QnaScreen", "Error stopping mic", e)
         }
         isListening = false
-        statusText = "Mikrofon mati"
         AudioAssistant.onUtteranceCompleted = null
     }
 
-    LaunchedEffect(isActive, reconnectNonce) {
+    LaunchedEffect(isActive) {
         if (!isActive) {
-            try {
-                chatRepository.disconnectChat()
-            } catch (e: Exception) {
-                Log.e("QnaScreen", "Error disconnecting chat", e)
-            }
-            isAuthenticated = false
-            isSessionCreating = false
-            sessionId = null
-            sessionCreateAttempts = 0
-            reconnectCycles = 0
-            authReconnectAttempts = 0
+            hasInitializedVoiceFlow = false
+            stopMic()
             isProcessing = false
-            return@LaunchedEffect
+        } else {
+            coroutineScope.launch {
+                chatViewModel.loadHistoryForCurrentSession(forceReload = false)
+            }
         }
+    }
+
+    LaunchedEffect(isActive, reconnectNonce) {
+        if (!isActive) return@LaunchedEffect
 
         statusText = "Menghubungkan ke backend..."
-        val flow = try {
-            chatRepository.connectChat()
-        } catch (e: Exception) {
-            Log.e("QnaScreen", "Error connecting to chat", e)
-            statusText = "Gagal menghubungkan ke backend. Coba lagi."
-            null
-        }
-        
+        val flow = chatRepository.connectChat()
         if (flow == null) {
             statusText = "Token login tidak ditemukan. Silakan login ulang."
             return@LaunchedEffect
         }
-        
-        // If WebSocket was already authenticated before we subscribed to the flow,
-        // set isAuthenticated immediately so UI doesn't wait
+
         if (UnifiedWebSocketManager.isAuthenticated()) {
             isAuthenticated = true
-            Log.d("QnaScreen", "WebSocket already authenticated, setting isAuthenticated=true")
-            requestSessionIfNeeded(force = true)
         }
 
         try {
-            // Add timeout for connection
-            withTimeoutOrNull(30_000L) {
-                flow.collect { response ->
-                    when {
-                        response.error != null -> {
-                            try {
-                                if (response.error.contains("Not authenticated", ignoreCase = true)) {
-                                    failCurrentRequest("Menghubungkan ulang ke backend...")
-                                    isAuthenticated = false
-                                    isSessionCreating = false
-                                    sessionId = null
-                                    if (authReconnectAttempts < 3) {
-                                        authReconnectAttempts += 1
-                                        reconnectNonce += 1
-                                    } else {
-                                        failCurrentRequest("Sesi autentikasi bermasalah. Silakan login ulang.")
-                                    }
-                                    return@collect
-                                }
-                                if (response.error.contains("Invalid or expired token", ignoreCase = true)) {
-                                    isAuthenticated = false
-                                    failCurrentRequest("Sesi login expired. Silakan login ulang.")
-                                    return@collect
-                                }
+            flow.collect { response ->
+                when {
+                    response.error != null -> {
+                        isProcessing = false
+                        statusText = "Error backend: ${response.error}"
+                    }
 
-                                // If send_message failed due missing session, request a fresh session and retry queued question.
-                                if (response.error.contains("session_id and content are required", ignoreCase = true)) {
-                                    failCurrentRequest("Sesi chat tidak valid. Menyiapkan sesi baru...")
-                                    requestSessionIfNeeded(force = true)
-                                    return@collect
-                                }
-
-                                failCurrentRequest("Error backend: ${response.error}")
-                            } catch (e: Exception) {
-                                Log.e("QnaScreen", "Error handling error response", e)
-                                failCurrentRequest("Terjadi kesalahan sistem")
-                            }
+                    response.action == "trigger_minigame" -> {
+                        val parsed = parseQuizGameData(response)
+                        if (parsed == null) {
+                            statusText = "Kuis gagal dimulai: data tidak valid"
+                            return@collect
                         }
 
-                    // Some backend builds send chat payload with assistant_message but null action.
-                    (response.action == "chat_response") ||
-                        (response.assistant_message != null) -> {
-                        try {
-                            Log.d("QnaScreen", "chat_response handler: raw response=${response.toString().take(500)}")
-                            val answer = extractAssistantAnswer(response)
-                            Log.d("QnaScreen", "Extracted answer='$answer' isBlank=${answer.isBlank()}")
+                        val fallbackTopic = uiState.chatMessages
+                            .asReversed()
+                            .firstOrNull { it.isUser }
+                            ?.text
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "anatomi torso"
 
-                            if (answer.isBlank()) {
-                                isProcessing = false
-                                statusText = "Respons backend kosong."
-                                Log.d("QnaScreen", "Answer is blank, setting status")
-                                return@collect
-                            }
+                        val gameData = if (parsed.topic.isBlank()) {
+                            parsed.copy(topic = fallbackTopic)
+                        } else {
+                            parsed
+                        }
 
-                            Log.d("QnaScreen", "Adding to chatHistory: $answer")
-                            chatHistory.add(ChatMessage(text = answer, isUser = false))
-                            Log.d("QnaScreen", "chatHistory size now: ${chatHistory.size}")
+                        quizRepository.submitQuizData(gameData)
+                        handoffToQuizPage()
+                    }
 
-                            coroutineScope.launch {
-                                try {
-                                    listState.animateScrollToItem((chatHistory.size - 1).coerceAtLeast(0))
-                                } catch (e: Exception) {
-                                    Log.e("QnaScreen", "Error scrolling to item", e)
-                                }
-                            }
-
+                    response.action == "chat_response" || response.assistant_message != null -> {
+                        val answer = extractAssistantAnswer(response)
+                        if (answer.isBlank()) {
                             isProcessing = false
-                            statusText = "Menjawab via suara..."
+                            statusText = "Respons backend kosong."
+                            return@collect
+                        }
 
-                            try {
-                                Log.d("QnaScreen", "Speaking answer: ${answer.take(100)}")
-                                AudioAssistant.speak(answer)
+                        val normalizedAnswer = answer.lowercase()
+                        val shouldHandoffToQuiz = normalizedAnswer.contains("kuis") ||
+                            normalizedAnswer.contains("quiz")
+                        if (shouldHandoffToQuiz) {
+                            handoffToQuizPage()
+                            return@collect
+                        }
 
-                                // Set callback for when speech completes
-                                AudioAssistant.onUtteranceCompleted = {
-                                    if (isActive) {
-                                        Log.d("QnaScreen", "Speech completed via callback")
-                                        statusText = "Siap. Tekan mic untuk bertanya lagi."
-                                    }
-                                }
+                        chatViewModel.appendAssistantMessage(answer)
+                        isProcessing = false
+                        statusText = "Menjawab via suara..."
 
-                                // Timeout fallback: if TTS takes too long or callback doesn't fire,
-                                // auto-transition after 15 seconds
-                                coroutineScope.launch {
-                                    delay(15_000L)
-                                    if (isActive && statusText == "Menjawab via suara...") {
-                                        Log.d("QnaScreen", "TTS timeout fallback: transitioning to ready")
-                                        statusText = "Siap. Tekan mic untuk bertanya lagi."
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e("QnaScreen", "Error speaking answer", e)
-                                statusText = "Siap. Tekan mic untuk bertanya lagi."
+                        AudioAssistant.speak(answer)
+                        AudioAssistant.onUtteranceCompleted = {
+                            if (isActive && !isProcessing && !isListening) {
+                                HapticHelper.shortBuzz()
+                                statusText = "🎤 Mendengarkan..."
+                                chatViewModel.requestAutoListen()
                             }
-                        } catch (e: Exception) {
-                            Log.e("QnaScreen", "Error processing chat response", e)
-                            isProcessing = false
-                            statusText = "Error memproses jawaban"
                         }
                     }
 
                     response.action == "authenticated" -> {
                         isAuthenticated = true
-                        authReconnectAttempts = 0
-                        reconnectCycles = 0
-                        requestSessionIfNeeded(force = true)
-                        statusText = "Autentikasi berhasil, membuat sesi..."
+                        statusText = "Autentikasi berhasil"
                     }
 
                     response.action == "connected" -> {
                         statusText = "Terhubung ke backend, autentikasi..."
                     }
-
-                    response.action == "session_created" -> {
-                        sessionId = response.session_id
-                        isSessionCreating = false
-                        sessionCreateAttempts = 0
-                        val queued = pendingQuestion
-                        if (!queued.isNullOrBlank()) {
-                            pendingQuestion = null
-                            statusText = "Mengirim pertanyaan ke backend..."
-                            val sent = chatRepository.sendChatMessage(sessionId, queued)
-                            if (!sent) {
-                                pendingQuestion = queued
-                                statusText = "Koneksi chat terputus, menyambung ulang..."
-                                reconnectNonce += 1
-                            }
-                        } else {
-                            statusText = "Siap mendengarkan"
-                        }
-                    }
-
-                    response.action == "sessions_list" -> {
-                        val existingSessionId = response.sessions
-                            ?.asSequence()
-                            ?.mapNotNull { element ->
-                                runCatching {
-                                    element.jsonObject["session_id"]?.jsonPrimitive?.contentOrNull
-                                }.getOrNull()
-                            }
-                            ?.firstOrNull { !it.isNullOrBlank() }
-
-                        if (!existingSessionId.isNullOrBlank()) {
-                            sessionId = existingSessionId
-                            isSessionCreating = false
-                            sessionCreateAttempts = 0
-
-                            val queued = pendingQuestion
-                            if (!queued.isNullOrBlank()) {
-                                pendingQuestion = null
-                                statusText = "Mengirim pertanyaan ke backend..."
-                                val sent = chatRepository.sendChatMessage(sessionId, queued)
-                                if (!sent) {
-                                    pendingQuestion = queued
-                                    statusText = "Koneksi chat terputus, menyambung ulang..."
-                                    reconnectNonce += 1
-                                }
-                            } else {
-                                statusText = "Siap. Tekan mic untuk mulai."
-                            }
-                        } else if (isAuthenticated && sessionId.isNullOrBlank()) {
-                            requestSessionIfNeeded(force = true)
-                        }
-                    }
-
-            }
                 }
-            } ?: run {
-                // Timeout occurred
-                Log.e("QnaScreen", "WebSocket connection timeout")
-                isProcessing = false
-                isSessionCreating = false
-                connectionTimeout = true
-                statusText = "Koneksi timeout. Mencoba ulang..."
-                delay(1000L)
-                reconnectNonce += 1
             }
         } catch (e: Exception) {
+            Log.e("QnaScreen", "Error collecting chat flow", e)
             isProcessing = false
-            isSessionCreating = false
             statusText = "Koneksi chat bermasalah. Coba buka ulang halaman."
         }
     }
 
-    // Hard timeout so UI cannot remain in processing forever.
-    LaunchedEffect(isProcessing, processingStartedAt) {
-        if (!isProcessing || processingStartedAt <= 0L) return@LaunchedEffect
+    LaunchedEffect(isActive, isAuthenticated, hasInitializedVoiceFlow) {
+        if (!isActive || !isAuthenticated || hasInitializedVoiceFlow) return@LaunchedEffect
 
-        val started = processingStartedAt
-        delay(35_000L)
-
-        if (isProcessing && processingStartedAt == started) {
-            failCurrentRequest("Respons backend terlalu lama. Coba kirim lagi.")
-        }
-    }
-
-    // Auto-retry for connection timeout
-    LaunchedEffect(connectionTimeout, reconnectNonce) {
-        if (!isActive || !connectionTimeout) return@LaunchedEffect
-        
-        delay(3000L) // Wait before retry
-        connectionTimeout = false
-        
-        if (reconnectCycles < 3) {
-            statusText = "Mencoba koneksi ulang... (${reconnectCycles + 1}/3)"
-            reconnectCycles += 1
-            reconnectNonce += 1
-        } else {
-            statusText = "Gagal terhubung setelah beberapa percobaan. Periksa koneksi internet."
-        }
-    }
-
-    LaunchedEffect(isAuthenticated, isSessionCreating, sessionId, isActive, sessionCreateAttempts, reconnectCycles) {
-        if (!isActive || !isAuthenticated || !isSessionCreating || !sessionId.isNullOrBlank()) return@LaunchedEffect
-
-        if (sessionCreateAttempts >= 3 && reconnectCycles < 1) {
-            statusText = "Menyegarkan koneksi chat..."
-            reconnectCycles += 1
-                        chatRepository.disconnectChat()
-            isAuthenticated = false
-            isSessionCreating = false
-            sessionId = null
-            lastSessionRequestAt = 0L
-            sessionCreateAttempts = 0
-            reconnectNonce += 1
+        statusText = "Menyiapkan sesi..."
+        val sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
+        if (sessionId.isNullOrBlank()) {
+            statusText = "Gagal menyiapkan sesi."
             return@LaunchedEffect
         }
 
-        if (sessionCreateAttempts >= 5) {
-            isSessionCreating = false
-            isProcessing = false
-            statusText = "Gagal membuat sesi chat. Coba kembali ke halaman ini atau login ulang."
-            return@LaunchedEffect
-        }
+        chatViewModel.loadHistoryForCurrentSession(forceReload = true)
+        hasInitializedVoiceFlow = true
 
-        delay(2500)
+        val greeting = "Halo, saya asisten anatomi Anda. Silakan ajukan pertanyaan."
+        HapticHelper.shortBuzz()
+        statusText = "Menyapa pengguna..."
+        queueGreetingAndAutoListen(greeting)
+    }
 
-        if (isActive && isAuthenticated && isSessionCreating && sessionId.isNullOrBlank()) {
-            statusText = "Menyiapkan sesi chat... (${sessionCreateAttempts + 1}/5)"
-            requestSessionIfNeeded(force = true)
+    LaunchedEffect(uiState.autoListenRequested, isActive, isProcessing, isListening) {
+        if (!isActive || !uiState.autoListenRequested) return@LaunchedEffect
+        if (isProcessing || isListening) return@LaunchedEffect
+
+        chatViewModel.clearAutoListenRequest()
+        doStartListening()
+    }
+
+    LaunchedEffect(uiState.chatMessages.size) {
+        if (uiState.chatMessages.isNotEmpty()) {
+            listState.animateScrollToItem((uiState.chatMessages.size - 1).coerceAtLeast(0))
         }
     }
 
-    // Keep mic fully manual when page becomes active.
-    LaunchedEffect(isActive) {
-        if (isActive) {
-            AudioAssistant.onUtteranceCompleted = {
-                if (isActive && !isProcessing && !isListening) {
-                    statusText = "Siap. Tekan mic untuk mulai."
-                }
-            }
-            if (!isProcessing && !isListening) {
-                statusText = "Siap. Tekan mic untuk mulai."
-            }
-        } else {
-            // Page is no longer active → STOP everything immediately
-            stopMic()
-        }
-    }
-
-    // Note: page-deactivation cleanup (stopMic, disconnectChat, reset session state)
-    // is handled by LaunchedEffect(isActive, reconnectNonce) and LaunchedEffect(isActive)
-    // above. Mutating Compose state in DisposableEffect.onDispose is unsafe when the
-    // composable is still alive (just inactive in a pager), so that block was removed.
-
-    // Full cleanup on composable dispose
     DisposableEffect(Unit) {
         onDispose {
-            try {
-                chatRepository.disconnectChat()
-            } catch (e: Exception) {
-                Log.e("QnaScreen", "Error disconnecting chat on full dispose", e)
-            }
-            isAuthenticated = false
-            isSessionCreating = false
-            sessionId = null
-            sessionCreateAttempts = 0
-            reconnectCycles = 0
+            stopMic()
             try {
                 voiceHelper.destroy()
             } catch (e: Exception) {
-                Log.e("QnaScreen", "Error destroying voice helper on full dispose", e)
+                Log.e("QnaScreen", "Error destroying voice helper", e)
             }
             AudioAssistant.onUtteranceCompleted = null
-            isListening = false
         }
     }
 
-    // ─── Animations ───
     val infiniteTransition = rememberInfiniteTransition(label = "mic_pulse")
     val micScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "mic_scale"
     )
     val micGlow by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 0.8f,
-        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+        initialValue = 0.25f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
         label = "mic_glow"
     )
 
-    // ─── UI ───
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -636,7 +483,7 @@ fun QnaScreen(isActive: Boolean = true) {
                 Brush.verticalGradient(
                     listOf(
                         MaterialTheme.colorScheme.background,
-                        SurfaceCard.copy(alpha = 0.15f),
+                        NeonCyan.copy(alpha = 0.05f),
                         MaterialTheme.colorScheme.background
                     )
                 )
@@ -644,220 +491,342 @@ fun QnaScreen(isActive: Boolean = true) {
             .imePadding()
             .semantics { contentDescription = "Halaman Mode Tanya Jawab" }
     ) {
-        // ─── Header ───
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 20.dp, start = 20.dp, end = 20.dp, bottom = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(top = 16.dp, start = 16.dp, end = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "Mode Tanya Jawab",
-                style = MaterialTheme.typography.headlineMedium,
-                color = NeonCyan,
-                modifier = Modifier.semantics { heading() }
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "Tanyakan apa saja tentang anatomi torso",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    "Mode Tanya Jawab",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = NeonCyan,
+                    modifier = Modifier.semantics { heading() }
+                )
+                Text(
+                    "Voice-first untuk pengguna tunanetra",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+
+            IconButton(
+                onClick = { openHistorySheet() },
+                modifier = Modifier.semantics { contentDescription = "Buka riwayat sesi" }
+            ) {
+                Icon(Icons.Default.History, contentDescription = null, tint = NeonCyan)
+            }
         }
 
-        // ─── Chat bubble history (scrollable, takes remaining space) ───
-        LazyColumn(
-            state = listState,
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (chatHistory.isEmpty()) {
-                item {
-                    Box(
-                        Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.SmartToy, null,
-                                tint = NeonCyan.copy(alpha = 0.25f),
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "Tanyakan tentang organ tubuh\natau ketik di kolom bawah",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
-            }
-
-            items(chatHistory) { msg -> ChatBubble(message = msg) }
-            item { Spacer(Modifier.height(4.dp)) }
-        }
-
-        // ─── Bottom input bar: [Mic] [TextField] [Send] ───
-        // All controls in one row. No overlapping with FAB (FAB is for speaker toggle).
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-        ) {
-            // Status pill
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp, start = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 96.dp)
             ) {
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isListening -> MicActive
-                                isProcessing -> NeonAmber
-                                else -> NeonGreen
-                            }
-                        )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    statusText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        isListening -> NeonAmber
-                        isProcessing -> NeonAmber
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    fontSize = 11.sp
-                )
-            }
-
-            // Input row: [Mic button] [Text field with send]
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mic button (left side, separate from text field)
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isListening) MicActive.copy(alpha = micGlow)
-                            else MicIdle
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
+                if (uiState.chatMessages.isEmpty()) {
+                    item {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            if (isListening) stopMic() else doStartListening()
-                        }
-                        .semantics {
-                            contentDescription = if (isListening)
-                                "Mikrofon aktif. Ketuk untuk berhenti."
-                            else "Mikrofon mati. Ketuk untuk mulai."
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
-                        contentDescription = null,
-                        tint = if (isListening) Color.White else NeonCyan,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .then(if (isListening) Modifier.scale(micScale) else Modifier)
-                    )
-                }
-
-                Spacer(Modifier.width(8.dp))
-
-                // Text input field (takes remaining space, with send icon)
-                OutlinedTextField(
-                    value = textInput,
-                    onValueChange = { textInput = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    placeholder = {
-                        Text(
-                            "Ketik pertanyaan...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            fontSize = 12.sp
-                        )
-                    },
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        color = Color.White, fontSize = 13.sp
-                    ),
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
-                        cursorColor = NeonCyan,
-                        focusedContainerColor = SurfaceCard.copy(alpha = 0.5f),
-                        unfocusedContainerColor = SurfaceCard.copy(alpha = 0.3f)
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (textInput.isNotBlank()) {
-                                val q = textInput.trim()
-                                textInput = ""
-                                keyboardController?.hide()
-                                processTypedQuestion(q)
-                            }
-                        }
-                    ),
-                    trailingIcon = {
-                        if (textInput.isNotBlank()) {
-                            IconButton(onClick = {
-                                val q = textInput.trim()
-                                textInput = ""
-                                keyboardController?.hide()
-                                processTypedQuestion(q)
-                            }) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    "Kirim", tint = NeonCyan
+                                    Icons.Default.SmartToy,
+                                    null,
+                                    tint = NeonCyan.copy(alpha = 0.22f),
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "Katakan pertanyaan Anda\natau ketik di kolom bawah",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
+                }
+
+                items(uiState.chatMessages) { msg ->
+                    ChatBubble(message = msg)
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.95f))
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+        ) {
+            Column {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp, start = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isListening -> MicActive
+                                    isProcessing -> NeonAmber
+                                    else -> NeonGreen
+                                }
+                            )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            isListening -> NeonAmber
+                            isProcessing -> NeonAmber
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontSize = 11.sp
+                    )
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isListening) MicActive.copy(alpha = micGlow)
+                                else MicIdle
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                // Manual interrupt should force-stop any ongoing speech.
+                                AudioAssistant.stop()
+                                if (isListening) {
+                                    HapticHelper.shortBuzz()
+                                    stopMic()
+                                    statusText = "Mikrofon dihentikan"
+                                } else {
+                                    doStartListening()
+                                }
+                            }
+                            .semantics {
+                                contentDescription = if (isListening) {
+                                    "Mikrofon aktif. Ketuk untuk berhenti"
+                                } else {
+                                    "Mikrofon mati. Ketuk untuk mulai"
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
+                            contentDescription = null,
+                            tint = if (isListening) Color.White else NeonCyan,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .then(if (isListening) Modifier.scale(micScale) else Modifier)
+                        )
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    OutlinedTextField(
+                        value = textInput,
+                        onValueChange = { textInput = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        placeholder = {
+                            Text(
+                                "Ketik pertanyaan...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                fontSize = 12.sp
+                            )
+                        },
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
+                            color = Color.White,
+                            fontSize = 13.sp
+                        ),
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan.copy(alpha = 0.8f),
+                            unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
+                            cursorColor = NeonCyan,
+                            focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
+                            unfocusedContainerColor = SurfaceCard.copy(alpha = 0.28f)
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (textInput.isNotBlank()) {
+                                    val q = textInput.trim()
+                                    textInput = ""
+                                    keyboardController?.hide()
+                                    processTypedQuestion(q)
+                                }
+                            }
+                        ),
+                        trailingIcon = {
+                            if (textInput.isNotBlank()) {
+                                IconButton(onClick = {
+                                    val q = textInput.trim()
+                                    textInput = ""
+                                    keyboardController?.hide()
+                                    processTypedQuestion(q)
+                                }) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Kirim",
+                                        tint = NeonCyan
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showHistorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showHistorySheet = false },
+            containerColor = SurfaceCard
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Riwayat Sesi",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = NeonCyan,
+                    fontWeight = FontWeight.Bold
                 )
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(NeonGreen.copy(alpha = 0.14f))
+                        .border(1.dp, NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                        .clickable {
+                            HapticHelper.doubleBuzz()
+                            showHistorySheet = false
+                            startNewSessionWithVoiceCue()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = NeonGreen)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Mulai Sesi Baru", color = Color.White)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                if (uiState.isLoadingSessions) {
+                    Text(
+                        text = "Memuat daftar sesi...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+
+                if (uiState.sessions.isEmpty() && !uiState.isLoadingSessions) {
+                    Text(
+                        text = "Belum ada sesi tersimpan.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(uiState.sessions) { session ->
+                        val isSelected = uiState.sessionId == session.sessionId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) NeonCyan.copy(alpha = 0.14f)
+                                    else SurfaceCard.copy(alpha = 0.5f)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isSelected) NeonCyan.copy(alpha = 0.5f)
+                                    else Color.White.copy(alpha = 0.2f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable { switchToSession(session) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.SmartToy, contentDescription = null, tint = NeonCyan)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(session.title, color = Color.White, fontSize = 13.sp)
+                                Text(
+                                    session.updatedAt ?: session.createdAt ?: "Tanpa timestamp",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/**
- * ChatBubble — neon-bordered chat message.
- */
 @Composable
-fun ChatBubble(message: ChatMessage) {
-    val isUser = message.isUser
-    val bubbleColor = if (isUser) NeonAmber else NeonCyan
-    val borderColor = if (isUser) NeonAmber.copy(alpha = 0.5f) else NeonCyan.copy(alpha = 0.5f)
+fun ChatBubble(message: ChatUiMessage) {
+    val bubbleColor = if (message.isUser) NeonAmber else NeonCyan
+    val borderColor = if (message.isUser) NeonAmber.copy(alpha = 0.45f) else NeonCyan.copy(alpha = 0.45f)
 
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top
     ) {
-        if (!isUser) {
+        if (!message.isUser) {
             Box(
-                Modifier.size(26.dp).clip(CircleShape).background(NeonCyan.copy(alpha = 0.12f)),
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(NeonCyan.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.SmartToy, "AI", tint = NeonCyan, modifier = Modifier.size(14.dp))
@@ -874,50 +843,59 @@ fun ChatBubble(message: ChatMessage) {
                     .widthIn(max = 280.dp)
                     .clip(
                         RoundedCornerShape(
-                            topStart = if (isUser) 16.dp else 4.dp,
-                            topEnd = if (isUser) 4.dp else 16.dp,
-                            bottomStart = 16.dp, bottomEnd = 16.dp
+                            topStart = if (message.isUser) 16.dp else 4.dp,
+                            topEnd = if (message.isUser) 4.dp else 16.dp,
+                            bottomStart = 16.dp,
+                            bottomEnd = 16.dp
                         )
                     )
                     .border(
-                        1.dp, borderColor,
+                        1.dp,
+                        borderColor,
                         RoundedCornerShape(
-                            topStart = if (isUser) 16.dp else 4.dp,
-                            topEnd = if (isUser) 4.dp else 16.dp,
-                            bottomStart = 16.dp, bottomEnd = 16.dp
+                            topStart = if (message.isUser) 16.dp else 4.dp,
+                            topEnd = if (message.isUser) 4.dp else 16.dp,
+                            bottomStart = 16.dp,
+                            bottomEnd = 16.dp
                         )
                     )
                     .background(
-                        if (isUser) SurfaceCard.copy(alpha = 0.7f)
+                        if (message.isUser) SurfaceCard.copy(alpha = 0.65f)
                         else SurfaceCard.copy(alpha = 0.5f)
                     )
                     .padding(10.dp)
                     .semantics {
-                        contentDescription = if (isUser) "Pertanyaan: ${message.text}"
+                        contentDescription = if (message.isUser) "Pertanyaan: ${message.text}"
                         else "Jawaban: ${message.text}"
                     }
             ) {
                 Column {
                     Text(
-                        if (isUser) "Anda" else "Anatomi AI",
+                        if (message.isUser) "Anda" else "Anatomi AI",
                         style = MaterialTheme.typography.labelSmall,
-                        color = bubbleColor, fontWeight = FontWeight.Bold, fontSize = 10.sp
+                        color = bubbleColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
                         message.text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.9f),
-                        lineHeight = 20.sp, fontSize = 13.sp
+                        lineHeight = 20.sp,
+                        fontSize = 13.sp
                     )
                 }
             }
         }
 
-        if (isUser) {
+        if (message.isUser) {
             Spacer(Modifier.width(6.dp))
             Box(
-                Modifier.size(26.dp).clip(CircleShape).background(NeonAmber.copy(alpha = 0.12f)),
+                Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(NeonAmber.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.Person, "User", tint = NeonAmber, modifier = Modifier.size(14.dp))
@@ -927,12 +905,7 @@ fun ChatBubble(message: ChatMessage) {
 }
 
 private fun extractAssistantAnswer(response: ChatResponse): String {
-    Log.d("QnaScreen", "extractAssistantAnswer called: answer=${response.answer?.take(50)} assistant_message=${response.assistant_message}")
-    
-    response.answer?.takeIf { it.isNotBlank() }?.let { 
-        Log.d("QnaScreen", "Extracted from .answer field: ${it.take(100)}")
-        return it 
-    }
+    response.answer?.takeIf { it.isNotBlank() }?.let { return it }
 
     val content = runCatching {
         response.assistant_message
@@ -942,6 +915,12 @@ private fun extractAssistantAnswer(response: ChatResponse): String {
             ?.contentOrNull
     }.getOrNull()
 
-    Log.d("QnaScreen", "Extracted from .assistant_message.content: ${content?.take(100)}")
     return content?.trim().orEmpty()
+}
+
+private fun parseQuizGameData(response: ChatResponse): QuizGameData? {
+    val payload = response.game_data ?: return null
+    return runCatching {
+        qnaJson.decodeFromJsonElement<QuizGameData>(payload)
+    }.getOrNull()
 }

@@ -31,6 +31,27 @@ data class SessionResponse(
     val session_id: String
 )
 
+@Serializable
+data class SessionHistoryMessage(
+    val role: String,
+    val content: String,
+    val timestamp: String? = null
+)
+
+@Serializable
+data class SessionHistoryResponse(
+    val session_id: String,
+    val messages: List<SessionHistoryMessage> = emptyList()
+)
+
+@Serializable
+data class SessionSummary(
+    val session_id: String,
+    val title: String? = null,
+    val created_at: String? = null,
+    val updated_at: String? = null
+)
+
 /**
  * Chat Models
  */
@@ -55,7 +76,8 @@ data class ChatResponse(
     val assistant_message: JsonElement? = null,
     val sessions: List<JsonElement>? = null,
     val messages: List<JsonElement>? = null,
-    val error: String? = null
+    val error: String? = null,
+    val game_data: JsonElement? = null
 )
 
 /**
@@ -67,6 +89,12 @@ data class IngestMetadata(
     val kelas_akademik: Int,
     val title: String,
     val description: String
+)
+
+@Serializable
+data class GenerateQuizResponse(
+    val session_id: String,
+    val quiz: QuizGameData
 )
 
 /**
