@@ -61,8 +61,9 @@ object AudioAssistant {
                     Log.w(TAG, "Indonesian locale not available, using default.")
                     tts?.setLanguage(Locale.getDefault())
                 }
-                tts?.setSpeechRate(0.95f)
-                tts?.setPitch(1.0f)
+                // Optimized for clarity + natural speech (offline only)
+                tts?.setSpeechRate(0.8f)    // 80% speed - jelas tapi tidak terllau lambat
+                tts?.setPitch(1.15f)        // Sedikit tinggi - lebih natural, tetap jelas
 
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
