@@ -15,6 +15,7 @@ object TokenManager {
     private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
     private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
     private val USERNAME_KEY = stringPreferencesKey("username")
+    private val CHAT_SESSION_ID_KEY = stringPreferencesKey("chat_session_id")
     
     fun saveTokens(
         context: Context,
@@ -71,5 +72,31 @@ object TokenManager {
     
     fun isLoggedIn(context: Context): Boolean {
         return getAccessToken(context) != null
+    }
+
+    fun saveChatSessionId(context: Context, sessionId: String) {
+        runBlocking(Dispatchers.IO) {
+            context.dataStore.edit { preferences ->
+                preferences[CHAT_SESSION_ID_KEY] = sessionId
+            }
+        }
+    }
+
+    fun getChatSessionId(context: Context): String? {
+        return runBlocking(Dispatchers.IO) {
+            try {
+                context.dataStore.data.first()[CHAT_SESSION_ID_KEY]
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    fun clearChatSessionId(context: Context) {
+        runBlocking(Dispatchers.IO) {
+            context.dataStore.edit { preferences ->
+                preferences.remove(CHAT_SESSION_ID_KEY)
+            }
+        }
     }
 }

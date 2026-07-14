@@ -1,9 +1,12 @@
 package com.anatomy.app.network
 
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
+import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * API Service Interface for HTTP endpoints
@@ -32,6 +35,22 @@ interface ApiService {
     // Create a new chat session (server will return session_id)
     @POST("/chat/sessions")
     suspend fun createSession(): SessionResponse
+
+    @GET("/chat/sessions")
+    suspend fun listSessions(): List<SessionSummary>
+
+    @GET("/sessions")
+    suspend fun listSessionsLegacy(): List<SessionSummary>
+
+    @GET("/chat/sessions/{session_id}/history")
+    suspend fun getSessionHistory(
+        @Path("session_id") sessionId: String
+    ): SessionHistoryResponse
+
+    @POST("/chat/generate_quiz")
+    suspend fun generateQuiz(
+        @Query("topic") topic: String
+    ): GenerateQuizResponse
 
 }
 

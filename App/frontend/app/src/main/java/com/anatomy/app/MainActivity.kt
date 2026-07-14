@@ -61,6 +61,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Enforce new chat session creation on each app restart.
+        TokenManager.clearChatSessionId(this)
+
         // Request permissions if not already granted
         requestPermissionsIfNeeded()
 

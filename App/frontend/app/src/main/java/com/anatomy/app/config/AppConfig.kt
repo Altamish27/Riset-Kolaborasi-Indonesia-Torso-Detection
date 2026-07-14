@@ -14,13 +14,13 @@ object AppConfig {
     private val BASE_URL_KEY = stringPreferencesKey("base_url")
     private val WS_CHAT_PATH_KEY = stringPreferencesKey("ws_chat_path")
     private val WS_VOICE_PATH_KEY = stringPreferencesKey("ws_voice_path")
-    
+
     // Default values
-    private const val DEFAULT_BASE_URL = "http://43.157.235.115:8000"
+    private const val DEFAULT_BASE_URL = "https://backend.rkiprojek.web.id"
     private const val DEFAULT_WS_CHAT_PATH = "/ws/chat"
     private const val DEFAULT_WS_VOICE_PATH = "/ws/voice"
     private const val DEFAULT_WS_SCAN_PATH = "/ws/scan"
-    
+
     /**
      * Get Base URL from configuration Stream or use default
      */
@@ -29,12 +29,12 @@ object AppConfig {
             preferences[BASE_URL_KEY] ?: DEFAULT_BASE_URL
         }
     }
-    
+
     /**
      * Get Base URL value (non-blocking, uses default if not configured)
      */
     fun getBaseUrlDefault(): String = DEFAULT_BASE_URL
-    
+
     /**
      * Set Base URL in configuration
      */
@@ -43,7 +43,7 @@ object AppConfig {
             preferences[BASE_URL_KEY] = url
         }
     }
-    
+
     /**
      * Get WebSocket Chat Path from configuration Stream or use default
      */
@@ -52,12 +52,12 @@ object AppConfig {
             preferences[WS_CHAT_PATH_KEY] ?: DEFAULT_WS_CHAT_PATH
         }
     }
-    
+
     /**
      * Get WebSocket Chat Path value (non-blocking, uses default if not configured)
      */
     fun getWsChatPathDefault(): String = DEFAULT_WS_CHAT_PATH
-    
+
     /**
      * Get WebSocket Voice Path from configuration Stream or use default
      */
@@ -66,20 +66,20 @@ object AppConfig {
             preferences[WS_VOICE_PATH_KEY] ?: DEFAULT_WS_VOICE_PATH
         }
     }
-    
+
     /**
      * Get WebSocket Voice Path value (non-blocking, uses default if not configured)
      */
     fun getWsVoicePathDefault(): String = DEFAULT_WS_VOICE_PATH
-    
+
     /**
      * Get WebSocket Scan Path value (for LLM scan AI requests)
-     * 
+     *
      * FALLBACK: If backend doesn't support /ws/scan yet, use /ws/voice
      * TODO: Change back to DEFAULT_WS_SCAN_PATH when backend is ready
      */
     fun getWsScanPathDefault(): String = DEFAULT_WS_VOICE_PATH // Fallback to voice endpoint
-    
+
     /**
      * Set WebSocket Chat Path in configuration
      */
@@ -88,7 +88,7 @@ object AppConfig {
             preferences[WS_CHAT_PATH_KEY] = path
         }
     }
-    
+
     /**
      * Set WebSocket Voice Path in configuration
      */
