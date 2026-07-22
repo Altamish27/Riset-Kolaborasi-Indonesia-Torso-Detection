@@ -198,6 +198,33 @@ ws.onmessage = (ev) => {
 - `SECRET_KEY` — required for JWT signing
 - `MONGO_URI` — connection string to MongoDB
 - `MONGO_DB_NAME` — database name
+
+---
+
+**Organ Detection** (`/api/detect`)
+
+- POST `/api/detect` — detect organ model in an uploaded image (protected)
+   - Headers: `Authorization: Bearer <access_token>`
+   - Content-Type: `multipart/form-data`
+   - Form field: `file` — image file (JPEG, PNG, WebP)
+   - Success (HTTP 200):
+
+```json
+{
+   "status": "detected" | "not_detected",
+   "class_id": "Jantung",
+   "class_name": "Jantung (Heart)",
+   "confidence": "high",
+   "description": "Model peraga organ Jantung terdeteksi."
+}
+```
+
+- Error responses: 400 for invalid file type/size, 401 for unauthenticated, 503 for service unavailable when LLM keys exhausted.
+
+Frontend notes:
+- Use `multipart/form-data` upload, field name `file`.
+- The app's `HttpClientFactory` already injects `Authorization` header if access token is present.
+- Treat `status: "not_detected"` as a valid (non-error) response and show `description` to the user.
 - `GROQ_API_KEY` — key for the LLM provider
 - `LLM_MAX_CONCURRENCY` — integer limit for simultaneous LLM calls
 - `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`

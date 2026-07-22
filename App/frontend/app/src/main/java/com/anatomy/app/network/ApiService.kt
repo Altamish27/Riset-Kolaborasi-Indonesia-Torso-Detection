@@ -7,6 +7,9 @@ import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Multipart
+import retrofit2.http.Part
+import okhttp3.MultipartBody
 
 /**
  * API Service Interface for HTTP endpoints
@@ -51,6 +54,12 @@ interface ApiService {
     suspend fun generateQuiz(
         @Query("topic") topic: String
     ): GenerateQuizResponse
+
+    @Multipart
+    @POST("/api/detect")
+    suspend fun detectOrgan(
+        @Part file: MultipartBody.Part
+    ): DetectionApiResponse
 
 }
 

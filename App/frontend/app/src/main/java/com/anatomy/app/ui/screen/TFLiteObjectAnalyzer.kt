@@ -21,6 +21,8 @@ import java.nio.ByteBuffer
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * TFLiteObjectAnalyzer — CameraX ImageAnalysis.Analyzer using direct TFLite Interpreter.
@@ -67,6 +69,10 @@ class TFLiteObjectAnalyzer(
     private val classNameById = mutableMapOf<Int, String>()
     private val lock = Any()
     private var isClosed = false
+    // Capture support: request a one-shot JPEG snapshot from the current frame
+    private val captureRequested = AtomicBoolean(false)
+    @Volatile
+    private var captureCallback: ((ByteArray) -> Unit)? = null
     private var imageProcessor: ImageProcessor? = null
     private val tensorImage = TensorImage(DataType.UINT8)
     private var rgbFrameBitmap: Bitmap? = null
@@ -188,6 +194,22 @@ class TFLiteObjectAnalyzer(
                 image.close()
                 return
             }
+
+                // If a one-shot capture was requested, compress the bitmap to JPEG and invoke callback
+                if (captureRequested.getAndSet(false)) {
+                    try {
+                        val baos = ByteArrayOutputStream()
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, baos)
+                        val bytes = baos.toByteArray()
+                        // invoke callback on calling thread (camera executor)
+                        captureCallback?.invoke(bytes)
+                    } catch (e: Throwable) {
+                        pushDebug("Capture failed: ${e.message}")
+                    } finally {
+                        // clear callback reference after invocation
+                        captureCallback = null
+                    }
+                }
 
             val letterboxedBitmap = letterboxToInput(bitmap) ?: run {
                 image.close()
@@ -341,6 +363,15 @@ class TFLiteObjectAnalyzer(
         if (kotlin.math.abs(clamped - confidenceThreshold) < 0.001f) return
         confidenceThreshold = clamped
         pushDebug("Threshold diubah ke ${"%.2f".format(Locale.US, confidenceThreshold)}")
+    }
+
+    /**
+     * Request a one-time JPEG snapshot of the current analyzed frame.
+     * The [callback] is invoked with the JPEG bytes on the camera executor thread.
+     */
+    fun requestCapture(callback: (ByteArray) -> Unit) {
+        captureCallback = callback
+        captureRequested.set(true)
     }
 
     private fun normalizeModelLabel(rawLabel: String?): String? {

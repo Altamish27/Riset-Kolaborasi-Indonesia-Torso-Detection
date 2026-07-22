@@ -97,6 +97,15 @@ data class GenerateQuizResponse(
     val quiz: QuizGameData
 )
 
+@Serializable
+data class DetectionApiResponse(
+    val status: String,
+    val class_id: String? = null,
+    val class_name: String? = null,
+    val confidence: String? = null,
+    val description: String
+)
+
 /**
  * LLM explanations now use WebSocket /ws/chat endpoint
  * No REST endpoint needed - handled by ChatWebSocketClient
