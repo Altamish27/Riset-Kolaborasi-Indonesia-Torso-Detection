@@ -48,20 +48,22 @@ class LLMService(private val context: Context) {
      * @return Explanation text from AI, or error message if request fails
      */
     suspend fun getExplanationText(organName: String): String {
-        if (!isValidOrganName(organName)) {
-            Log.e(TAG, "Invalid organ name: $organName")
+        // Sanitize organ name: remove parenthetical translations and normalize underscores
+        val sanitized = organName.replace(Regex("\\(.*?\\)"), "").replace("_", " ").trim()
+        if (!isValidOrganName(sanitized)) {
+            Log.e(TAG, "Invalid organ name after sanitization: $organName -> $sanitized")
             return "Organ tidak valid untuk penjelasan."
         }
 
         return try {
             // Build a natural prompt for the LLM
-            val prompt = "Jelaskan organ $organName secara singkat, maksimal 3-4 kalimat. " +
+                val prompt = "Jelaskan organ $sanitized secara singkat, maksimal 3-4 kalimat. " +
                     "Fokus pada fungsi utama organ ini dalam bahasa Indonesia yang mudah dipahami."
             
             Log.d(TAG, "Requesting LLM explanation for: $organName via unified WebSocket")
             
             // Use unified WebSocket - no need for separate connection!
-            val explanation = requestViaUnifiedWebSocket(organName, prompt)
+            val explanation = requestViaUnifiedWebSocket(sanitized, prompt)
             
             if (explanation.isBlank()) {
                 Log.e(TAG, "Empty explanation received for $organName")

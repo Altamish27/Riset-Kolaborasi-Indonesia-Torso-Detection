@@ -379,7 +379,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         CameraPreview(
             isActive = isActive,
             analyzer = analyzer,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .semantics { contentDescription = "Pratinjau kamera. Arahkan kamera ke organ yang ingin dipelajari" }
         )
 
         ScanOverlay(
@@ -487,11 +489,44 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                             is DetectionRepository.RepositoryResult.Success -> {
                                 val resp = result.response
                                 if (resp.status == "detected") {
-                                    val speakText = "Model organ terdeteksi: ${resp.class_name ?: resp.class_id}."
-                                    statusText = "Terdeteksi: ${resp.class_name} (confidence=${resp.confidence})"
-                                    lockedOrgan = resp.class_name ?: resp.class_id
-                                    AudioAssistant.speak(speakText)
-                                    HapticHelper.doubleBuzz()
+                                    val displayName = resp.class_name ?: resp.class_id ?: "organ"
+                                        statusText = "Terdeteksi: ${resp.class_name} (confidence=${resp.confidence})"
+                                        // Lock to canonical id when available to avoid passing parenthetical text to LLM
+                                        lockedOrgan = resp.class_id ?: resp.class_name
+
+                                        val detectedMsg = "Model organ terdeteksi: $displayName."
+                                        AudioAssistant.speak(detectedMsg)
+                                        HapticHelper.doubleBuzz()
+
+                                        // Request a detailed explanation from LLM using sanitized organ id (prefer class_id)
+                                        val organForLLM = (resp.class_id ?: resp.class_name ?: displayName)
+                                            .replace("_", " ")
+                                            .replace(Regex("\\(.*?\\)"), "")
+                                            .trim()
+
+                                        try {
+                                            val explanation = withContext(Dispatchers.IO) {
+                                                llmService.getExplanationText(organForLLM)
+                                            }
+
+                                            if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) ||
+                                                explanation.contains("invalid", ignoreCase = true) || explanation.contains("tidak valid", ignoreCase = true)) {
+                                                // Fallback: use backend description and log raw response for debugging
+                                                Log.w("ScanAnatomyScreen", "LLM returned no useful explanation for $organForLLM. Raw resp: $resp")
+                                                statusText = resp.description
+                                                AudioAssistant.speak(resp.description)
+                                                HapticHelper.shortBuzz()
+                                            } else {
+                                                statusText = explanation
+                                                AudioAssistant.speak(explanation)
+                                                HapticHelper.doubleBuzz()
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("ScanAnatomyScreen", "Error fetching explanation", e)
+                                            statusText = resp.description
+                                            AudioAssistant.speak(resp.description)
+                                            HapticHelper.longBuzz()
+                                        }
                                 } else {
                                     val speakText = resp.description
                                     statusText = resp.description
@@ -576,7 +611,10 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                             isUploading = false
                         }
                     },
-                    modifier = Modifier.semantics { contentDescription = "Tombol ambil foto model organ tubuh untuk dideteksi" }
+                    modifier = Modifier
+                        .semantics { contentDescription = "Tombol ambil foto model organ tubuh untuk dideteksi" }
+                        .height(48.dp)
+                        .widthIn(min = 120.dp)
                 ) {
                     Text(text = "Ambil Foto untuk Deteksi")
                 }
