@@ -61,6 +61,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Allow extracting legacy native libraries to avoid 16KB page-size alignment warnings
+            useLegacyPackaging = true
+        }
     }
 
     // Don't compress TFLite model files
@@ -109,12 +113,12 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // TFLite Object Detection
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // TFLite Object Detection - updated to versions addressing 16KB page-size alignment
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
 
     // DataStore Preferences (for onboarding first-launch tracking)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
