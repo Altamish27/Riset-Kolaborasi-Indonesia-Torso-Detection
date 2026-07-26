@@ -466,6 +466,57 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 val AUTO_CAPTURE_COOLDOWN_MS = 3500L
                 val DETECTION_STABILITY_MS = 900L
 
+                // Helper function to process captured bytes (validate size, upload, TTS/haptic)
+                @Suppress("BlockingMethodInNonBlockingContext")
+                suspend fun processCapturedBytes(bytes: ByteArray) {
+                    try {
+                        val MAX_BYTES = 10L * 1024L * 1024L
+                        if (bytes.size.toLong() > MAX_BYTES) {
+                            val warn = "Ukuran gambar terlalu besar. Maksimal 10 megabita. Silakan coba lagi dengan jarak lebih dekat atau gunakan pencahayaan lebih baik."
+                            statusText = warn
+                            AudioAssistant.speak(warn)
+                            HapticHelper.longBuzz()
+                            return
+                        }
+
+                        val result = withContext(Dispatchers.IO) {
+                            DetectionRepository.detectImageBytes(context, bytes)
+                        }
+
+                        when (result) {
+                            is DetectionRepository.RepositoryResult.Success -> {
+                                val resp = result.response
+                                if (resp.status == "detected") {
+                                    val speakText = "Model organ terdeteksi: ${resp.class_name ?: resp.class_id}."
+                                    statusText = "Terdeteksi: ${resp.class_name} (confidence=${resp.confidence})"
+                                    lockedOrgan = resp.class_name ?: resp.class_id
+                                    AudioAssistant.speak(speakText)
+                                    HapticHelper.doubleBuzz()
+                                } else {
+                                    val speakText = resp.description
+                                    statusText = resp.description
+                                    AudioAssistant.speak(speakText)
+                                    HapticHelper.shortBuzz()
+                                }
+                            }
+                            is DetectionRepository.RepositoryResult.Failure -> {
+                                val msg = result.message ?: "Terjadi kesalahan jaringan"
+                                statusText = "Gagal mendeteksi: $msg"
+                                AudioAssistant.speak("Gagal mendeteksi. Silakan coba lagi.")
+                                HapticHelper.longBuzz()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ScanAnatomyScreen", "Upload/Detect error", e)
+                        val err = "Gagal mengunggah atau mendeteksi: ${e.message}"
+                        statusText = err
+                        AudioAssistant.speak("Gagal mengunggah atau mendeteksi. Coba lagi.")
+                        HapticHelper.longBuzz()
+                    } finally {
+                        isUploading = false
+                    }
+                }
+
                 // Auto-capture when analyzer reports a stable detection
                 LaunchedEffect(currentDetection, isLearningActive) {
                     if (!isPageActive) return@LaunchedEffect
@@ -533,56 +584,6 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 if (isUploading) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = "Sedang menganalisis gambar" })
-                }
-
-                // Helper function to process captured bytes (validate size, upload, TTS/haptic)
-                suspend fun processCapturedBytes(bytes: ByteArray) {
-                    try {
-                        val MAX_BYTES = 10L * 1024L * 1024L
-                        if (bytes.size.toLong() > MAX_BYTES) {
-                            val warn = "Ukuran gambar terlalu besar. Maksimal 10 megabita. Silakan coba lagi dengan jarak lebih dekat atau gunakan pencahayaan lebih baik."
-                            statusText = warn
-                            AudioAssistant.speak(warn)
-                            HapticHelper.longBuzz()
-                            return
-                        }
-
-                        val result = withContext(Dispatchers.IO) {
-                            DetectionRepository.detectImageBytes(context, bytes)
-                        }
-
-                        when (result) {
-                            is DetectionRepository.RepositoryResult.Success -> {
-                                val resp = result.response
-                                if (resp.status == "detected") {
-                                    val speakText = "Model organ terdeteksi: ${resp.class_name ?: resp.class_id}."
-                                    statusText = "Terdeteksi: ${resp.class_name} (confidence=${resp.confidence})"
-                                    lockedOrgan = resp.class_name ?: resp.class_id
-                                    AudioAssistant.speak(speakText)
-                                    HapticHelper.doubleBuzz()
-                                } else {
-                                    val speakText = resp.description
-                                    statusText = resp.description
-                                    AudioAssistant.speak(speakText)
-                                    HapticHelper.shortBuzz()
-                                }
-                            }
-                            is DetectionRepository.RepositoryResult.Failure -> {
-                                val msg = result.message ?: "Terjadi kesalahan jaringan"
-                                statusText = "Gagal mendeteksi: $msg"
-                                AudioAssistant.speak("Gagal mendeteksi. Silakan coba lagi.")
-                                HapticHelper.longBuzz()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ScanAnatomyScreen", "Upload/Detect error", e)
-                        val err = "Gagal mengunggah atau mendeteksi: ${e.message}"
-                        statusText = err
-                        AudioAssistant.speak("Gagal mengunggah atau mendeteksi. Coba lagi.")
-                        HapticHelper.longBuzz()
-                    } finally {
-                        isUploading = false
-                    }
                 }
             }
         }
