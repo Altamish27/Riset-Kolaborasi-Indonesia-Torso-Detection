@@ -500,10 +500,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                                         HapticHelper.doubleBuzz()
 
                                         // Request a detailed explanation from LLM using sanitized organ id (prefer class_id)
-                                        val organForLLM = (resp.class_id ?: resp.class_name ?: displayName)
-                                            .replace("_", " ")
-                                            .replace(Regex("\\(.*?\\)"), "")
-                                            .trim()
+                                        val organForLLM = com.anatomy.app.utils.OrganUtils.sanitizeOrganName(
+                                            (resp.class_id ?: resp.class_name ?: displayName)
+                                        )
 
                                         try {
                                             val explanation = withContext(Dispatchers.IO) {
@@ -512,10 +511,11 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
 
                                             if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) ||
                                                 explanation.contains("invalid", ignoreCase = true) || explanation.contains("tidak valid", ignoreCase = true)) {
-                                                // Fallback: use backend description and log raw response for debugging
+                                                // Fallback: build a friendly default message and log raw response for debugging
                                                 Log.w("ScanAnatomyScreen", "LLM returned no useful explanation for $organForLLM. Raw resp: $resp")
-                                                statusText = resp.description
-                                                AudioAssistant.speak(resp.description)
+                                                val fallback = "Organ $organForLLM berhasil terdeteksi. Silakan ajukan pertanyaan pada menu Tanya Jawab untuk informasi lebih lanjut."
+                                                statusText = fallback
+                                                AudioAssistant.speak(fallback)
                                                 HapticHelper.shortBuzz()
                                             } else {
                                                 statusText = explanation

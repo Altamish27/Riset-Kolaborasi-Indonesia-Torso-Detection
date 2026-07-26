@@ -5,6 +5,7 @@ import android.util.Log
 import com.anatomy.app.network.ScanWebSocketClient
 import com.anatomy.app.network.HttpClientFactory
 import com.anatomy.app.utils.TokenManager
+import com.anatomy.app.utils.OrganUtils
 import com.anatomy.app.utils.UnifiedWebSocketManager
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.*
@@ -48,9 +49,9 @@ class LLMService(private val context: Context) {
      * @return Explanation text from AI, or error message if request fails
      */
     suspend fun getExplanationText(organName: String): String {
-        // Sanitize organ name: remove parenthetical translations and normalize underscores
-        val sanitized = organName.replace(Regex("\\(.*?\\)"), "").replace("_", " ").trim()
-        if (!isValidOrganName(sanitized)) {
+        // Sanitize organ name and validate
+        val sanitized = OrganUtils.sanitizeOrganName(organName)
+        if (!OrganUtils.isValidOrganName(sanitized)) {
             Log.e(TAG, "Invalid organ name after sanitization: $organName -> $sanitized")
             return "Organ tidak valid untuk penjelasan."
         }
@@ -347,12 +348,7 @@ class LLMService(private val context: Context) {
      * @param organName Name to validate
      * @return true if organ name is valid, false otherwise
      */
-    fun isValidOrganName(organName: String): Boolean {
-        return organName.isNotBlank() && 
-               organName.length > 1 && 
-               organName.length < 100 &&
-               !organName.contains(Regex("[0-9!@#$%^&*()]"))
-    }
+    // Validation and sanitization are provided by OrganUtils
     
     /**
      * Disconnect from WebSocket (now managed globally)
