@@ -131,6 +131,16 @@ fun QnaScreen(
     val listState = rememberLazyListState()
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
 
+    fun stopMic() {
+        try {
+            voiceHelper.stopListening()
+        } catch (e: Exception) {
+            Log.e("QnaScreen", "Error stopping mic", e)
+        }
+        isListening = false
+        AudioAssistant.onUtteranceCompleted = null
+    }
+
     fun openHistorySheet() {
         coroutineScope.launch {
             HapticHelper.shortBuzz()
@@ -302,15 +312,7 @@ fun QnaScreen(
         }
     }
 
-    fun stopMic() {
-        try {
-            voiceHelper.stopListening()
-        } catch (e: Exception) {
-            Log.e("QnaScreen", "Error stopping mic", e)
-        }
-        isListening = false
-        AudioAssistant.onUtteranceCompleted = null
-    }
+    
 
     LaunchedEffect(isActive) {
         if (!isActive) {
