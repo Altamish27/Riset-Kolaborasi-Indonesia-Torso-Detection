@@ -131,27 +131,35 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         AudioAssistant.speak("Model organ terdeteksi: $sanitizedOrgan.")
                         HapticHelper.doubleBuzz()
 
-                        try {
-                            val explanation = withContext(Dispatchers.IO) {
+                        val explanation = try {
+                            withContext(Dispatchers.IO) {
                                 llmService.getExplanationText(sanitizedOrgan)
                             }
-                            if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) ||
-                                explanation.contains("invalid", ignoreCase = true) || explanation.contains("tidak valid", ignoreCase = true)) {
-                                val fallback = "Organ $sanitizedOrgan berhasil terdeteksi. Silakan ajukan pertanyaan pada menu QnA."
-                                statusText = fallback
-                                AudioAssistant.speak(fallback)
-                                HapticHelper.shortBuzz()
-                            } else {
-                                statusText = explanation
-                                AudioAssistant.speak(explanation)
-                                HapticHelper.doubleBuzz()
-                            }
                         } catch (e: Exception) {
-                            Log.e("ScanAnatomyScreen", "Error fetching explanation", e)
-                            val fallback = "Organ $sanitizedOrgan berhasil terdeteksi. Silakan ajukan pertanyaan pada menu QnA."
+                            Log.e("ScanAnatomy", "LLM Error: ${e.message}", e)
+                            null
+                        }
+
+                        val explanationText = if (!explanation.isNullOrBlank() &&
+                            !explanation.contains("tidak tersedia", ignoreCase = true) &&
+                            !explanation.contains("invalid", ignoreCase = true) &&
+                            !explanation.contains("tidak valid", ignoreCase = true)
+                        ) {
+                            explanation.trim()
+                        } else {
+                            null
+                        }
+
+                        if (explanationText != null) {
+                            val speakText = "Terdeteksi organ $sanitizedOrgan. $explanationText"
+                            statusText = explanationText
+                            AudioAssistant.speak(speakText)
+                            HapticHelper.doubleBuzz()
+                        } else {
+                            val fallback = "Terdeteksi organ $sanitizedOrgan. Layanan penjelasan detail sedang tidak tersedia, namun kamu bisa menanyakannya di menu QnA."
                             statusText = fallback
                             AudioAssistant.speak(fallback)
-                            HapticHelper.longBuzz()
+                            HapticHelper.shortBuzz()
                         }
                     } else {
                         val speakText = resp.description
