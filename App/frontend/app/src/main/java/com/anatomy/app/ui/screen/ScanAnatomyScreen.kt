@@ -56,8 +56,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import java.util.Locale
 import android.util.Log
+import androidx.camera.view.PreviewView
 
 @Composable
 fun ScanAnatomyScreen(isActive: Boolean = true) {
@@ -67,9 +70,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
 
     var currentDetection by remember { mutableStateOf<DetectionResult?>(null) }
-    var statusText by remember { mutableStateOf("Ucapkan mulai belajar untuk memulai") }
+    var statusText by remember { mutableStateOf("Layar pemindaian aktif. Arahkan kamera ke model organ, lalu ucapkan 'Pindai' atau tekan tombol untuk mengambil gambar.") }
     var detectionThreshold by remember { mutableStateOf(0.25f) }
-    var isLearningActive by remember { mutableStateOf(false) }
+    var isLearningActive by remember { mutableStateOf(false) } // kept for compatibility but not used for auto-capture
     var lockedOrgan by remember { mutableStateOf<String?>(null) }
     var isAiBusy by remember { mutableStateOf(false) }
     var isVoiceListening by remember { mutableStateOf(false) }
@@ -78,97 +81,94 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     var isPageActive by remember { mutableStateOf(isActive) }
     var sessionToken by remember { mutableStateOf(0) }
 
+    // PreviewView reference for single-shot captures (available once CameraPreview binds)
+    var previewRef by remember { mutableStateOf<PreviewView?>(null) }
+
+    // Helper to capture bitmap from PreviewView and pass bytes to processor
+    suspend fun captureFromPreviewAndProcess(preview: PreviewView?) {
+        if (preview == null) {
+            statusText = "Pratinjau kamera belum siap. Coba lagi."
+            AudioAssistant.speak(statusText)
+            return
+        }
+        try {
+            val bmp: Bitmap? = preview.bitmap
+            if (bmp == null) {
+                statusText = "Gagal menangkap gambar. Coba lagi."
+                AudioAssistant.speak(statusText)
+                return
+            }
+            val bytes = withContext(Dispatchers.IO) {
+                val baos = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                baos.toByteArray()
+            }
+            processCapturedBytes(bytes)
+        } catch (e: Exception) {
+            Log.e("ScanAnatomyScreen", "Capture error", e)
+            statusText = "Gagal mengambil gambar: ${e.message}"
+            AudioAssistant.speak("Gagal mengambil gambar. Coba lagi.")
+        }
+    }
+
     fun speak(text: String) {
         if (!AudioAssistant.isVoiceOn) return
         AudioAssistant.speak(text)
     }
 
+    // startLockedLoop kept minimal: allow follow-up QnA while lockedOrgan is set
     fun startLockedLoop() {
         val localSession = sessionToken
         val organ = lockedOrgan
         if (!isPageActive || organ.isNullOrBlank() || isVoiceListening) return
 
         isVoiceListening = true
-        statusText = "Organ $organ terkunci. Silakan bertanya atau ucapkan lanjut organ lain."
+        statusText = "Organ $organ terkunci. Silakan bertanya atau ucapkan 'lanjut organ lain'."
 
         voiceHelper.startListening(
             onResult = { spoken ->
-                if (!isPageActive || localSession != sessionToken) {
-                    isVoiceListening = false
-                    return@startListening
-                }
                 isVoiceListening = false
-                if (!isPageActive) return@startListening
-
-                val currentOrgan = lockedOrgan
-                if (currentOrgan.isNullOrBlank()) return@startListening
-                val norm = spoken.lowercase(Locale.US).trim()
-
-                if (norm.contains("lanjut organ lain")) {
-                    statusText = "Baik, lanjut ke organ berikutnya."
-                    speak("Baik, lanjut organ lain.")
-                    lockedOrgan = null
-                    currentDetection = null
-                    currentMode = "detecting"
-                    return@startListening
-                }
-
+                if (!isPageActive || localSession != sessionToken) return@startListening
+                val currentOrgan = lockedOrgan ?: return@startListening
                 if (spoken.isBlank()) {
                     statusText = "Tidak terdengar. Ulangi pertanyaan atau ucapkan lanjut organ lain."
-                    scope.launch {
-                        delay(500L)
-                        if (!isPageActive || localSession != sessionToken) return@launch
-                        startLockedLoop()
-                    }
                     return@startListening
                 }
 
-                isAiBusy = true
-                statusText = "Meminta jawaban AI tentang $currentOrgan..."
+                val norm = spoken.lowercase(Locale.US)
+                if (norm.contains("lanjut")) {
+                    lockedOrgan = null
+                    statusText = "Lanjut ke organ berikutnya."
+                    return@startListening
+                }
+
+                // Ask LLM for follow-up answer
                 scope.launch {
+                    isAiBusy = true
+                    statusText = "Meminta jawaban AI tentang $currentOrgan..."
                     try {
                         val answer = withContext(Dispatchers.IO) {
                             llmService.askQuestionAboutOrgan(currentOrgan, spoken)
                         }
                         isAiBusy = false
-                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
-                        
-                        if (answer.isBlank() || answer.contains("Maaf", ignoreCase = true) || 
-                            answer.contains("tidak dapat", ignoreCase = true)) {
-                            statusText = "AI tidak bisa menjawab. Coba pertanyaan lain atau lanjut organ lain."
-                            speak("Maaf, saya tidak bisa menjawab itu. Tanya yang lain atau lanjut organ lain.")
+                        if (answer.isBlank()) {
+                            statusText = "AI tidak bisa menjawab. Coba lagi."
+                            speak("Maaf, saya tidak bisa menjawab itu saat ini.")
                         } else {
-                            statusText = "Silakan tanya lagi atau ucapkan lanjut organ lain."
+                            statusText = "Jawaban tersedia."
                             speak(answer)
                         }
-                        delay(1200L)
-                        if (!isPageActive || localSession != sessionToken) return@launch
-                        startLockedLoop()
                     } catch (e: Exception) {
                         Log.e("ScanAnatomyScreen", "Error getting AI answer", e)
                         isAiBusy = false
-                        if (!isPageActive || localSession != sessionToken) return@launch
-                        statusText = "Error AI: Coba lagi atau lanjut organ lain."
-                        speak("Ada gangguan AI. Coba lagi atau lanjut organ lain.")
-                        delay(1200L)
-                        if (!isPageActive || localSession != sessionToken) return@launch
-                        startLockedLoop()
+                        statusText = "Error AI. Coba lagi nanti."
+                        speak("Ada gangguan AI. Silakan coba lagi nanti.")
                     }
                 }
             },
             onError = {
-                if (!isPageActive || localSession != sessionToken) {
-                    isVoiceListening = false
-                    return@startListening
-                }
                 isVoiceListening = false
-                if (!isPageActive) return@startListening
-                statusText = "Gagal mendengar. Ucapkan lagi atau lanjut organ lain."
-                scope.launch {
-                    delay(600L)
-                    if (!isPageActive || localSession != sessionToken) return@launch
-                    startLockedLoop()
-                }
+                statusText = "Gagal mendengar. Ucapkan lagi."
             }
         )
     }
@@ -242,75 +242,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         )
     }
 
-    val analyzer = remember {
-        TFLiteObjectAnalyzer(
-            context = context,
-            onDetection = { detection ->
-                scope.launch {
-                    val localSession = sessionToken
-                    if (!isPageActive || !isLearningActive || lockedOrgan != null || isAiBusy) return@launch
+    // Continuous frame analyzer disabled — single-shot capture only.
 
-                    currentDetection = detection
-                    if (detection == null) {
-                        statusText = "Mencari organ..."
-                        return@launch
-                    }
-
-                    val organ = detection.organName
-                    lockedOrgan = organ
-                    currentMode = "locked"
-                    isAiBusy = true
-                    statusText = "Organ terkunci: $organ. Meminta penjelasan AI..."
-
-                    try {
-                        val explanation = withContext(Dispatchers.IO) {
-                            llmService.getExplanationText(organ)
-                        }
-                        isAiBusy = false
-                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
-
-                        if (explanation.isBlank() || explanation.contains("Maaf", ignoreCase = true) || 
-                            explanation.contains("tidak dapat", ignoreCase = true)) {
-                            statusText = "Tidak ada penjelasan untuk $organ. Deteksi organ lain."
-                            speak("Tidak ada penjelasan. Silakan sorot organ lain.")
-                            // Auto-unlock after failed explanation
-                            delay(3000L)
-                            if (!isPageActive || localSession != sessionToken) return@launch
-                            lockedOrgan = null
-                            currentDetection = null
-                            currentMode = "detecting"
-                            statusText = "Mencari organ..."
-                        } else {
-                            statusText = "Organ $organ terkunci. Dengarkan penjelasan."
-                            speak(explanation)
-                            delay(1200L)
-                            if (!isPageActive || localSession != sessionToken) return@launch
-                            startLockedLoop()
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ScanAnatomyScreen", "Error getting AI explanation", e)
-                        isAiBusy = false
-                        if (!isPageActive || localSession != sessionToken || lockedOrgan == null) return@launch
-                        statusText = "Error AI. Deteksi organ lain atau coba lagi."
-                        speak("Ada gangguan AI. Silakan coba organ lain.")
-                        // Auto-unlock after error
-                        delay(3000L)
-                        if (!isPageActive || localSession != sessionToken) return@launch
-                        lockedOrgan = null
-                        currentDetection = null
-                        currentMode = "detecting"
-                        statusText = "Mencari organ..."
-                    }
-                }
-            },
-            onDebugLog = {},
-            initialConfidenceThreshold = detectionThreshold
-        )
-    }
-
-    LaunchedEffect(detectionThreshold) {
-        analyzer.updateConfidenceThreshold(detectionThreshold)
-    }
+    LaunchedEffect(detectionThreshold) { /* no-op: threshold retained for compatibility */ }
 
     LaunchedEffect(isActive) {
         isPageActive = isActive
@@ -333,31 +267,48 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         if (!AudioAssistant.isVoiceOn) {
             AudioAssistant.cycleMode()
         }
-        speak("Mode scan siap. Ucapkan mulai belajar untuk memulai.")
-        delay(1000L)
-        if (!isPageActive) return@LaunchedEffect  // guard: page may have deactivated during delay
-        if (!isLearningActive && lockedOrgan == null) {
-            startLearningCommandLoop()
-        }
+        // Brief greeting for blind accessibility and start voice listening for capture
+        speak(statusText)
+        delay(1200L)
+        if (!isPageActive) return@LaunchedEffect
+        // Start simple voice listening for capture trigger
+        isVoiceListening = true
+        voiceHelper.startListening(
+            onResult = { spoken ->
+                isVoiceListening = false
+                if (!isPageActive) return@startListening
+                val norm = spoken.lowercase(Locale.US)
+                val triggers = listOf("pindai", "foto", "ambil", "scan", "jelaskan")
+                if (triggers.any { norm.contains(it) }) {
+                    scope.launch {
+                        // Trigger single-shot capture
+                        isUploading = true
+                        val startMsg = "Mengambil foto dengan perintah suara, mohon tunggu."
+                        statusText = startMsg
+                        AudioAssistant.speak(startMsg)
+                        HapticHelper.shortBuzz()
+                        captureFromPreviewAndProcess(previewRef)
+                        isUploading = false
+                    }
+                } else {
+                    statusText = "Perintah tidak dikenali. Tekan tombol atau ucapkan 'pindai'."
+                }
+            },
+            onError = {
+                isVoiceListening = false
+                statusText = "Gagal mendengar. Tekan tombol untuk mengambil gambar."
+            }
+        )
     }
 
-    LaunchedEffect(isActive, isLearningActive, lockedOrgan, isAiBusy, isVoiceListening) {
-        if (!isPageActive) return@LaunchedEffect
-        if (!isLearningActive && lockedOrgan == null && !isAiBusy && !isVoiceListening) {
-            startLearningCommandLoop()
-        }
-    }
+    // No continuous learning/auto-capture loops — simplified single-shot flow
 
     DisposableEffect(Unit) {
         onDispose {
-            // Invalidate session token immediately so any lingering coroutine
-            // callbacks that captured `localSession` will see a mismatch and
-            // return early without touching disposed Compose state.
             sessionToken += 1
             isPageActive = false
             voiceHelper.destroy()
             llmService.disconnect()
-            analyzer.close()
         }
     }
 
@@ -380,10 +331,11 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     ) {
         CameraPreview(
             isActive = isActive,
-            analyzer = analyzer,
+            analyzer = null,
             modifier = Modifier
                 .fillMaxSize()
-                .semantics { contentDescription = "Pratinjau kamera. Arahkan kamera ke organ yang ingin dipelajari" }
+                .semantics { contentDescription = "Pratinjau kamera. Arahkan kamera ke organ yang ingin dipelajari" },
+            onPreviewReady = { pv -> previewRef = pv }
         )
 
         ScanOverlay(
@@ -557,62 +509,22 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                     }
                 }
 
-                // Auto-capture when analyzer reports a stable detection
-                LaunchedEffect(currentDetection, isLearningActive) {
-                    if (!isPageActive) return@LaunchedEffect
-                    if (!isLearningActive) return@LaunchedEffect
+                // Auto-capture disabled. Use manual button or voice trigger for single-shot capture.
 
-                    val now = System.currentTimeMillis()
-                    if (currentDetection != null) {
-                        if (detectionFirstSeenMs == 0L) detectionFirstSeenMs = now
-                    } else {
-                        detectionFirstSeenMs = 0L
-                    }
-
-                    if (currentDetection != null && lockedOrgan == null && !isUploading) {
-                        if (detectionFirstSeenMs > 0L && now - detectionFirstSeenMs >= DETECTION_STABILITY_MS) {
-                            if (now - lastAutoCaptureMs > AUTO_CAPTURE_COOLDOWN_MS) {
-                                lastAutoCaptureMs = now
-                                // Request a one-shot capture from analyzer
-                                try {
-                                    isUploading = true
-                                    val startMsg = "Mengambil foto otomatis, mohon tunggu. Sedang menganalisis gambar."
-                                    statusText = startMsg
-                                    AudioAssistant.speak(startMsg)
-                                    HapticHelper.shortBuzz()
-
-                                    (analyzer as? TFLiteObjectAnalyzer)?.requestCapture { bytes ->
-                                        scope.launch {
-                                            processCapturedBytes(bytes)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("ScanAnatomyScreen", "Auto-capture error", e)
-                                    isUploading = false
-                                }
-                            }
-                        }
-                    }
-                }
+                // Capture helper defined earlier; single-shot flow in use.
 
                 // Manual shutter button for accessible capture
                 Button(
                     onClick = {
                         if (isUploading) return@Button
-                        try {
-                            isUploading = true
-                            val startMsg = "Mengambil foto, mohon tunggu. Sedang menganalisis gambar."
-                            statusText = startMsg
-                            AudioAssistant.speak(startMsg)
-                            HapticHelper.shortBuzz()
+                        isUploading = true
+                        val startMsg = "Mengambil foto, mohon tunggu. Sedang menganalisis gambar."
+                        statusText = startMsg
+                        AudioAssistant.speak(startMsg)
+                        HapticHelper.shortBuzz()
 
-                            (analyzer as? TFLiteObjectAnalyzer)?.requestCapture { bytes ->
-                                scope.launch {
-                                    processCapturedBytes(bytes)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e("ScanAnatomyScreen", "Capture request failed", e)
+                        scope.launch {
+                            captureFromPreviewAndProcess(previewRef)
                             isUploading = false
                         }
                     },

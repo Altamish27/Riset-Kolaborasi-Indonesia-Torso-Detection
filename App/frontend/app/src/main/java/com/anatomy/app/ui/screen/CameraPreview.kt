@@ -34,7 +34,8 @@ import java.util.concurrent.Executors
 fun CameraPreview(
     modifier: Modifier = Modifier,
     isActive: Boolean,
-    analyzer: ImageAnalysis.Analyzer? = null
+    analyzer: ImageAnalysis.Analyzer? = null,
+    onPreviewReady: ((PreviewView) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -56,7 +57,7 @@ fun CameraPreview(
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
 
-            if (isActive) {
+                    if (isActive) {
                 try {
                     // Unbind all first
                     cameraProvider.unbindAll()
@@ -114,6 +115,9 @@ fun CameraPreview(
                 future.addListener({
                     try { future.get().unbindAll() } catch (e: Exception) {
                         Log.e("CameraPreview", "unbindAll on dispose failed", e)
+                        // Notify caller that preview view is ready so they can
+                        // capture the current frame via `previewView.bitmap`.
+                        onPreviewReady?.invoke(previewView)
                     }
                 }, ContextCompat.getMainExecutor(context))
             } catch (e: Exception) {
