@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.services.LLMService
 import com.anatomy.app.ui.theme.NeonAmber
+import com.anatomy.app.utils.OrganUtils
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
 import kotlinx.coroutines.Dispatchers
@@ -490,44 +491,47 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                             is DetectionRepository.RepositoryResult.Success -> {
                                 val resp = result.response
                                 if (resp.status == "detected") {
-                                    val displayName = resp.class_name ?: resp.class_id ?: "organ"
-                                        statusText = "Terdeteksi: ${resp.class_name} (confidence=${resp.confidence})"
-                                        // Lock to canonical id when available to avoid passing parenthetical text to LLM
-                                        lockedOrgan = resp.class_id ?: resp.class_name
+                                    val rawOrgan = resp.class_id ?: resp.class_name ?: ""
+                                    val sanitizedOrgan = OrganUtils.sanitizeOrganName(rawOrgan)
 
-                                        val detectedMsg = "Model organ terdeteksi: $displayName."
-                                        AudioAssistant.speak(detectedMsg)
-                                        HapticHelper.doubleBuzz()
+                                    if (!OrganUtils.isValidOrganName(sanitizedOrgan)) {
+                                        val invalidMessage = "Organ terdeteksi tetapi tidak dikenali. ${resp.description}"
+                                        statusText = invalidMessage
+                                        AudioAssistant.speak(invalidMessage)
+                                        HapticHelper.shortBuzz()
+                                        return@withContext
+                                    }
 
-                                        // Request a detailed explanation from LLM using sanitized organ id (prefer class_id)
-                                        val organForLLM = com.anatomy.app.utils.OrganUtils.sanitizeOrganName(
-                                            (resp.class_id ?: resp.class_name ?: displayName)
-                                        )
+                                    lockedOrgan = sanitizedOrgan
+                                    statusText = "Terdeteksi: $sanitizedOrgan (confidence=${resp.confidence})"
 
-                                        try {
-                                            val explanation = withContext(Dispatchers.IO) {
-                                                llmService.getExplanationText(organForLLM)
-                                            }
+                                    val detectedMsg = "Model organ terdeteksi: $sanitizedOrgan."
+                                    AudioAssistant.speak(detectedMsg)
+                                    HapticHelper.doubleBuzz()
 
-                                            if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) ||
-                                                explanation.contains("invalid", ignoreCase = true) || explanation.contains("tidak valid", ignoreCase = true)) {
-                                                // Fallback: build a friendly default message and log raw response for debugging
-                                                Log.w("ScanAnatomyScreen", "LLM returned no useful explanation for $organForLLM. Raw resp: $resp")
-                                                val fallback = "Organ $organForLLM berhasil terdeteksi. Silakan ajukan pertanyaan pada menu Tanya Jawab untuk informasi lebih lanjut."
-                                                statusText = fallback
-                                                AudioAssistant.speak(fallback)
-                                                HapticHelper.shortBuzz()
-                                            } else {
-                                                statusText = explanation
-                                                AudioAssistant.speak(explanation)
-                                                HapticHelper.doubleBuzz()
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e("ScanAnatomyScreen", "Error fetching explanation", e)
-                                            statusText = resp.description
-                                            AudioAssistant.speak(resp.description)
-                                            HapticHelper.longBuzz()
+                                    try {
+                                        val explanation = withContext(Dispatchers.IO) {
+                                            llmService.getExplanationText(sanitizedOrgan)
                                         }
+
+                                        if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) ||
+                                            explanation.contains("invalid", ignoreCase = true) || explanation.contains("tidak valid", ignoreCase = true)) {
+                                            val fallback = "Organ $sanitizedOrgan berhasil terdeteksi. Silakan ajukan pertanyaan pada menu QnA."
+                                            statusText = fallback
+                                            AudioAssistant.speak(fallback)
+                                            HapticHelper.shortBuzz()
+                                        } else {
+                                            statusText = explanation
+                                            AudioAssistant.speak(explanation)
+                                            HapticHelper.doubleBuzz()
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("ScanAnatomyScreen", "Error fetching explanation", e)
+                                        val fallback = "Organ $sanitizedOrgan berhasil terdeteksi. Silakan ajukan pertanyaan pada menu QnA."
+                                        statusText = fallback
+                                        AudioAssistant.speak(fallback)
+                                        HapticHelper.longBuzz()
+                                    }
                                 } else {
                                     val speakText = resp.description
                                     statusText = resp.description

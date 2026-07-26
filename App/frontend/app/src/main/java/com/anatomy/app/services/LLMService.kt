@@ -53,7 +53,7 @@ class LLMService(private val context: Context) {
         val sanitized = OrganUtils.sanitizeOrganName(organName)
         if (!OrganUtils.isValidOrganName(sanitized)) {
             Log.e(TAG, "Invalid organ name after sanitization: $organName -> $sanitized")
-            return "Organ tidak valid untuk penjelasan."
+            return ""
         }
 
         return try {
@@ -96,7 +96,7 @@ class LLMService(private val context: Context) {
         }
 
         return try {
-            val prompt = "Konteks organ: $organName. " +
+            val prompt = "Konteks organ: $sanitized. " +
                 "Jawab pertanyaan berikut secara singkat dan jelas dalam bahasa Indonesia: $question"
 
             val answer = requestViaUnifiedWebSocket(sanitized, prompt)
