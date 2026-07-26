@@ -499,7 +499,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                                         statusText = invalidMessage
                                         AudioAssistant.speak(invalidMessage)
                                         HapticHelper.shortBuzz()
-                                        return@withContext
+                                        return
                                     }
 
                                     lockedOrgan = sanitizedOrgan

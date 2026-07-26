@@ -24,8 +24,8 @@ object OrganUtils {
             .replace(Regex("(?i)ginjal dalam"), "Ginjal Dalam")
             .replace(Regex("(?i)paru paru"), "Paru-Paru")
             .replace(Regex("(?i)paru-paru"), "Paru-Paru")
-            .replace(Regex("(?i)\b(?<!-)kiri\b"), "Kiri")
-            .replace(Regex("(?i)\b(?<!-)kanan\b"), "Kanan")
+            .replace(Regex("(?i)\\b(?<!-)kiri\\b"), "Kiri")
+            .replace(Regex("(?i)\\b(?<!-)kanan\\b"), "Kanan")
             .replace(Regex("\\s+"), " ")
             .trim()
 

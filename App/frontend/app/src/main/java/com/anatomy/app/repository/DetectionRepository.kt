@@ -21,7 +21,7 @@ object DetectionRepository {
 
     suspend fun detectImageBytes(context: Context, bytes: ByteArray): RepositoryResult {
         return try {
-            val requestBody: RequestBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+            val requestBody: RequestBody = RequestBody.create("image/jpeg".toMediaTypeOrNull(), bytes)
             val part = MultipartBody.Part.createFormData("file", "scan_image.jpg", requestBody)
             val api = HttpClientFactory.createApiService(context)
             val resp = api.detectOrgan(part)
