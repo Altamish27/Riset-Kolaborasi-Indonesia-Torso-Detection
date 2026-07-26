@@ -108,6 +108,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             }
 
             val result = withContext(Dispatchers.IO) {
+                Log.d("ScanAnatomy", "Sending image bytes to backend, size: ${bytes.size} bytes")
                 DetectionRepository.detectImageBytes(context, bytes)
             }
 
@@ -170,8 +171,16 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 }
                 is DetectionRepository.RepositoryResult.Failure -> {
                     val msg = result.message ?: "Terjadi kesalahan jaringan"
-                    statusText = "Gagal mendeteksi: $msg"
-                    AudioAssistant.speak("Gagal mendeteksi. Silakan coba lagi.")
+                    val connectionError = result.throwable
+                    if (connectionError is java.net.ConnectException || connectionError is java.net.UnknownHostException) {
+                        statusText = "Gagal terhubung ke server backend. Periksa koneksi internet atau IP server, lalu coba lagi."
+                        AudioAssistant.speak(
+                            "Gagal terhubung ke server backend. Periksa koneksi internet atau IP server, lalu coba lagi dengan menekan tombol atau mengucapkan 'pindai'."
+                        )
+                    } else {
+                        statusText = "Gagal mengunggah gambar ke server. Silakan coba lagi."
+                        AudioAssistant.speak("Terjadi kesalahan saat mengunggah gambar ke server. Silakan coba lagi.")
+                    }
                     HapticHelper.longBuzz()
                 }
             }

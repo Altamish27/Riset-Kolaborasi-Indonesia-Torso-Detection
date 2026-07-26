@@ -1,12 +1,13 @@
 package com.anatomy.app.repository
 
 import android.content.Context
+import android.util.Log
 import com.anatomy.app.network.DetectionApiResponse
 import com.anatomy.app.network.HttpClientFactory
 import okhttp3.MultipartBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 /**
  * Simple repository to encapsulate image detection network call.
@@ -16,12 +17,13 @@ object DetectionRepository {
 
     sealed class RepositoryResult {
         data class Success(val response: DetectionApiResponse) : RepositoryResult()
-        data class Failure(val code: Int? = null, val message: String) : RepositoryResult()
+        data class Failure(val code: Int? = null, val message: String, val throwable: Throwable? = null) : RepositoryResult()
     }
 
     suspend fun detectImageBytes(context: Context, bytes: ByteArray): RepositoryResult {
         return try {
-            val requestBody: RequestBody = RequestBody.create("image/jpeg".toMediaTypeOrNull(), bytes)
+            Log.d("ScanAnatomy", "Sending image bytes to backend, size: ${bytes.size} bytes")
+            val requestBody: RequestBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
             val part = MultipartBody.Part.createFormData("file", "scan_image.jpg", requestBody)
             val api = HttpClientFactory.createApiService(context)
             val resp = api.detectOrgan(part)
@@ -29,9 +31,11 @@ object DetectionRepository {
         } catch (e: retrofit2.HttpException) {
             val code = e.code()
             val msg = e.response()?.errorBody()?.string() ?: e.message()
-            RepositoryResult.Failure(code, msg)
+            Log.e("ScanAnatomy", "Backend Detection HTTP Failed: $code / $msg", e)
+            RepositoryResult.Failure(code, msg, e)
         } catch (e: Exception) {
-            RepositoryResult.Failure(null, e.message ?: "Unknown error")
+            Log.e("ScanAnatomy", "Backend Detection Network Call Failed: ${e.localizedMessage}", e)
+            RepositoryResult.Failure(null, e.message ?: "Unknown error", e)
         }
     }
 }
