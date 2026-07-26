@@ -60,6 +60,7 @@ import android.graphics.Bitmap
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import android.util.Log
+import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
 
 @Composable
@@ -83,6 +84,8 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
 
     // PreviewView reference for single-shot captures (available once CameraPreview binds)
     var previewRef by remember { mutableStateOf<PreviewView?>(null) }
+    var imageCaptureRef by remember { mutableStateOf<ImageCapture?>(null) }
+    var isCameraReady by remember { mutableStateOf(false) }
 
     // Uploading state shared across handlers
     var isUploading by remember { mutableStateOf(false) }
@@ -177,9 +180,10 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
 
     // Helper to capture bitmap from PreviewView and pass bytes to processor
     suspend fun captureFromPreviewAndProcess(preview: PreviewView?) {
-        if (preview == null) {
-            statusText = "Pratinjau kamera belum siap. Coba lagi."
-            AudioAssistant.speak(statusText)
+        if (!isCameraReady || preview == null) {
+            val message = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
+            statusText = message
+            AudioAssistant.speak(message)
             return
         }
         try {
@@ -372,9 +376,15 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 val triggers = listOf("pindai", "foto", "ambil", "scan", "jelaskan")
                 if (triggers.any { norm.contains(it) }) {
                     scope.launch {
-                        // Trigger single-shot capture
+                        if (!isCameraReady) {
+                            val notReady = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
+                            statusText = notReady
+                            AudioAssistant.speak(notReady)
+                            return@launch
+                        }
+                        if (isUploading) return@launch
                         isUploading = true
-                        val startMsg = "Mengambil foto dengan perintah suara, mohon tunggu."
+                        val startMsg = "Mengambil gambar..."
                         statusText = startMsg
                         AudioAssistant.speak(startMsg)
                         HapticHelper.shortBuzz()
@@ -426,7 +436,9 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             modifier = Modifier
                 .fillMaxSize()
                 .semantics { contentDescription = "Pratinjau kamera. Arahkan kamera ke organ yang ingin dipelajari" },
-            onPreviewReady = { pv -> previewRef = pv }
+            onPreviewReady = { pv -> previewRef = pv },
+            onImageCaptureReady = { capture -> imageCaptureRef = capture },
+            onCameraReady = { isCameraReady = true }
         )
 
         ScanOverlay(
@@ -512,9 +524,15 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 // Manual shutter button for accessible capture
                 Button(
                     onClick = {
+                        if (!isCameraReady) {
+                            val notReady = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
+                            statusText = notReady
+                            AudioAssistant.speak(notReady)
+                            return@Button
+                        }
                         if (isUploading) return@Button
                         isUploading = true
-                        val startMsg = "Mengambil foto, mohon tunggu. Sedang menganalisis gambar."
+                        val startMsg = "Mengambil gambar, mohon tunggu. Sedang menganalisis gambar."
                         statusText = startMsg
                         AudioAssistant.speak(startMsg)
                         HapticHelper.shortBuzz()

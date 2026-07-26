@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -35,7 +36,9 @@ fun CameraPreview(
     modifier: Modifier = Modifier,
     isActive: Boolean,
     analyzer: ImageAnalysis.Analyzer? = null,
-    onPreviewReady: ((PreviewView) -> Unit)? = null
+    onPreviewReady: ((PreviewView) -> Unit)? = null,
+    onCameraReady: (() -> Unit)? = null,
+    onImageCaptureReady: ((ImageCapture) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -69,6 +72,11 @@ fun CameraPreview(
                             setSurfaceProvider(previewView.surfaceProvider)
                         }
 
+                    // Image capture use case for readiness tracking and future capture.
+                    val imageCapture = ImageCapture.Builder()
+                        .setTargetRotation(Surface.ROTATION_0)
+                        .build()
+
                     // Image analysis use case
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -90,8 +98,13 @@ fun CameraPreview(
                         lifecycleOwner,
                         cameraSelector,
                         preview,
+                        imageCapture,
                         imageAnalysis
                     )
+
+                    onPreviewReady?.invoke(previewView)
+                    onImageCaptureReady?.invoke(imageCapture)
+                    onCameraReady?.invoke()
 
                     Log.d("CameraPreview", "Camera bound successfully.")
                 } catch (e: Exception) {
