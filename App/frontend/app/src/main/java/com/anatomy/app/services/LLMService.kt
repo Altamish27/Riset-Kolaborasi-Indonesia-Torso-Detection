@@ -87,7 +87,8 @@ class LLMService(private val context: Context) {
      * Ask a follow-up question about a specific organ via unified WebSocket.
      */
     suspend fun askQuestionAboutOrgan(organName: String, question: String): String {
-        if (!isValidOrganName(organName)) {
+        val sanitized = OrganUtils.sanitizeOrganName(organName)
+        if (!OrganUtils.isValidOrganName(sanitized)) {
             return "Organ tidak valid untuk pertanyaan lanjutan."
         }
         if (question.isBlank()) {
@@ -98,7 +99,7 @@ class LLMService(private val context: Context) {
             val prompt = "Konteks organ: $organName. " +
                 "Jawab pertanyaan berikut secara singkat dan jelas dalam bahasa Indonesia: $question"
 
-            val answer = requestViaUnifiedWebSocket(organName, prompt)
+            val answer = requestViaUnifiedWebSocket(sanitized, prompt)
             if (answer.isBlank()) {
                 "Maaf, saya belum bisa menjawab pertanyaan itu saat ini."
             } else {
