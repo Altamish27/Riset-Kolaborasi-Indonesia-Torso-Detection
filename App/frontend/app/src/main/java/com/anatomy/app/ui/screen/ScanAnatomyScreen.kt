@@ -34,6 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.camera.core.ImageCaptureException
+import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCancellableCoroutine
 // Camera capture handled via TFLiteObjectAnalyzer.requestCapture
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.services.LLMService
 import com.anatomy.app.ui.theme.NeonAmber
+import com.anatomy.app.utils.DetectedOrganStore
 import com.anatomy.app.utils.OrganUtils
 import com.anatomy.app.ui.theme.NeonCyan
 import com.anatomy.app.ui.theme.NeonGreen
@@ -128,8 +135,8 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         }
 
                         lockedOrgan = sanitizedOrgan
+                        DetectedOrganStore.updateOrgan(sanitizedOrgan)
                         statusText = "Terdeteksi: $sanitizedOrgan (confidence=${resp.confidence})"
-                        AudioAssistant.speak("Model organ terdeteksi: $sanitizedOrgan.")
                         HapticHelper.doubleBuzz()
 
                         val explanation = try {
@@ -157,7 +164,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                             AudioAssistant.speak(speakText)
                             HapticHelper.doubleBuzz()
                         } else {
-                            val fallback = "Terdeteksi organ $sanitizedOrgan. Layanan penjelasan detail sedang tidak tersedia, namun kamu bisa menanyakannya di menu QnA."
+                            val fallback = "Terdeteksi organ $sanitizedOrgan. Penjelasan detail sedang tidak tersedia."
                             statusText = fallback
                             AudioAssistant.speak(fallback)
                             HapticHelper.shortBuzz()
@@ -173,10 +180,8 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                     val msg = result.message ?: "Terjadi kesalahan jaringan"
                     val connectionError = result.throwable
                     if (connectionError is java.net.ConnectException || connectionError is java.net.UnknownHostException) {
-                        statusText = "Gagal terhubung ke server backend. Periksa koneksi internet atau IP server, lalu coba lagi."
-                        AudioAssistant.speak(
-                            "Gagal terhubung ke server backend. Periksa koneksi internet atau IP server, lalu coba lagi dengan menekan tombol atau mengucapkan 'pindai'."
-                        )
+                        statusText = "Gagal terhubung ke server backend. Periksa koneksi internet."
+                        AudioAssistant.speak("Gagal terhubung ke server backend. Periksa koneksi internet.")
                     } else {
                         statusText = "Gagal mengunggah gambar ke server. Silakan coba lagi."
                         AudioAssistant.speak("Terjadi kesalahan saat mengunggah gambar ke server. Silakan coba lagi.")
@@ -196,6 +201,40 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     }
 
     // Helper to capture bitmap from PreviewView and pass bytes to processor
+    private suspend fun captureImageCaptureToBytes(imageCapture: ImageCapture?): ByteArray? {
+        if (imageCapture == null) return null
+        return suspendCancellableCoroutine { cont ->
+            val tempFile = File(context.cacheDir, "scan_capture_${System.currentTimeMillis()}.jpg")
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+
+            imageCapture.takePicture(
+                outputOptions,
+                ContextCompat.getMainExecutor(context),
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        try {
+                            val bytes = tempFile.readBytes()
+                            cont.resume(bytes)
+                        } catch (e: Exception) {
+                            cont.resumeWithException(e)
+                        } finally {
+                            tempFile.delete()
+                        }
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        tempFile.delete()
+                        cont.resumeWithException(exception)
+                    }
+                }
+            )
+
+            cont.invokeOnCancellation {
+                tempFile.delete()
+            }
+        }
+    }
+
     suspend fun captureFromPreviewAndProcess(preview: PreviewView?) {
         if (!isCameraReady || preview == null) {
             val message = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
@@ -204,17 +243,20 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             return
         }
         try {
-            val bmp: Bitmap? = preview.bitmap
-            if (bmp == null) {
+            val bytes = withContext(Dispatchers.IO) {
+                preview.bitmap?.let { bmp ->
+                    val baos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                    baos.toByteArray()
+                } ?: captureImageCaptureToBytes(imageCaptureRef)
+            }
+
+            if (bytes == null || bytes.isEmpty()) {
                 statusText = "Gagal menangkap gambar. Coba lagi."
                 AudioAssistant.speak(statusText)
                 return
             }
-            val bytes = withContext(Dispatchers.IO) {
-                val baos = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-                baos.toByteArray()
-            }
+
             processCapturedBytes(bytes)
         } catch (e: Exception) {
             Log.e("ScanAnatomyScreen", "Capture error", e)
@@ -251,6 +293,8 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 if (norm.contains("lanjut")) {
                     lockedOrgan = null
                     statusText = "Lanjut ke organ berikutnya."
+                    lockedOrgan = null
+                    DetectedOrganStore.updateOrgan(null)
                     return@startListening
                 }
 
@@ -401,7 +445,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         }
                         if (isUploading) return@launch
                         isUploading = true
-                        val startMsg = "Mengambil gambar..."
+                        val startMsg = "Mengambil gambar, mohon tunggu..."
                         statusText = startMsg
                         AudioAssistant.speak(startMsg)
                         HapticHelper.shortBuzz()
@@ -549,7 +593,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                         }
                         if (isUploading) return@Button
                         isUploading = true
-                        val startMsg = "Mengambil gambar, mohon tunggu. Sedang menganalisis gambar."
+                        val startMsg = "Mengambil gambar, mohon tunggu..."
                         statusText = startMsg
                         AudioAssistant.speak(startMsg)
                         HapticHelper.shortBuzz()

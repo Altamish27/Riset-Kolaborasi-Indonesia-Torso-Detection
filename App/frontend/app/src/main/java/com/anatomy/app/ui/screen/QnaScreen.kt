@@ -83,6 +83,7 @@ import com.anatomy.app.network.QuizGameData
 import com.anatomy.app.repository.ChatRepository
 import com.anatomy.app.repository.QuizRepository
 import com.anatomy.app.ui.theme.MicActive
+import com.anatomy.app.utils.DetectedOrganStore
 import com.anatomy.app.ui.theme.MicIdle
 import com.anatomy.app.ui.theme.NeonAmber
 import com.anatomy.app.ui.theme.NeonCyan
@@ -127,7 +128,9 @@ fun QnaScreen(
     var reconnectNonce by remember { mutableStateOf(0) }
     var hasInitializedVoiceFlow by remember { mutableStateOf(false) }
     var showHistorySheet by remember { mutableStateOf(false) }
+    var lastDetectedOrgan by remember { mutableStateOf<String?>(null) }
 
+    val detectedOrgan by DetectedOrganStore.latestOrgan.collectAsState(initial = null)
     val listState = rememberLazyListState()
     val voiceHelper = remember { VoiceRecognitionHelper(context) }
 
@@ -319,9 +322,21 @@ fun QnaScreen(
             hasInitializedVoiceFlow = false
             stopMic()
             isProcessing = false
+            AudioAssistant.stop()
         } else {
             coroutineScope.launch {
                 chatViewModel.loadHistoryForCurrentSession(forceReload = false)
+            }
+        }
+    }
+
+    LaunchedEffect(detectedOrgan, isActive) {
+        if (!isActive) return@LaunchedEffect
+        if (!detectedOrgan.isNullOrBlank() && detectedOrgan != lastDetectedOrgan) {
+            lastDetectedOrgan = detectedOrgan
+            statusText = "Organ terakhir terdeteksi: $detectedOrgan. Ketik atau ucapkan pertanyaan tentang organ ini."
+            if (AudioAssistant.isVoiceOn) {
+                AudioAssistant.speak(statusText)
             }
         }
     }
@@ -514,21 +529,15 @@ fun QnaScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
-            }
-
-            IconButton(
-                onClick = { openHistorySheet() },
-                modifier = Modifier.semantics { contentDescription = "Buka riwayat sesi" }
-            ) {
-                Icon(Icons.Default.History, contentDescription = null, tint = NeonCyan)
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
+                        if (!detectedOrgan.isNullOrBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Organ terbaru: $detectedOrgan",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = NeonGreen,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
             LazyColumn(
                 state = listState,
                 modifier = Modifier

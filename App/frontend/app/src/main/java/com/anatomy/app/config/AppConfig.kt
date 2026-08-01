@@ -16,7 +16,7 @@ object AppConfig {
     private val WS_VOICE_PATH_KEY = stringPreferencesKey("ws_voice_path")
 
     // Default values
-    private const val DEFAULT_BASE_URL = "https://backend.rkiprojek.web.id"
+    private const val DEFAULT_BASE_URL = "https://backend.rkiprojek.web.id/"
     private const val DEFAULT_WS_CHAT_PATH = "/ws/chat"
     private const val DEFAULT_WS_VOICE_PATH = "/ws/voice"
     private const val DEFAULT_WS_SCAN_PATH = "/ws/scan"

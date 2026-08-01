@@ -1,5 +1,6 @@
 package com.anatomy.app.network
 
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -56,10 +57,10 @@ interface ApiService {
     ): GenerateQuizResponse
 
     @Multipart
-    @POST("/api/detect")
+    @POST("api/detect")
     suspend fun detectOrgan(
         @Part file: MultipartBody.Part
-    ): DetectionApiResponse
+    ): Response<DetectionApiResponse>
 
 }
 

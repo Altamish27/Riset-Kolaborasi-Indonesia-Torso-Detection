@@ -28,7 +28,7 @@ object HttpClientFactory {
     }
     
     fun createApiService(context: Context): ApiService {
-        val baseUrl = AppConfig.getBaseUrlDefault() // Use configured base URL
+        val baseUrl = AppConfig.getBaseUrl(context)
         
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY

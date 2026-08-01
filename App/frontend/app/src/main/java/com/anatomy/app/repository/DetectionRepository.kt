@@ -23,16 +23,24 @@ object DetectionRepository {
     suspend fun detectImageBytes(context: Context, bytes: ByteArray): RepositoryResult {
         return try {
             Log.d("ScanAnatomy", "Sending image bytes to backend, size: ${bytes.size} bytes")
-            val requestBody: RequestBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+            val requestBody: RequestBody = bytes.toRequestBody("image/jpeg".toMediaTypeOrNull(), 0, bytes.size)
             val part = MultipartBody.Part.createFormData("file", "scan_image.jpg", requestBody)
             val api = HttpClientFactory.createApiService(context)
-            val resp = api.detectOrgan(part)
-            RepositoryResult.Success(resp)
-        } catch (e: retrofit2.HttpException) {
-            val code = e.code()
-            val msg = e.response()?.errorBody()?.string() ?: e.message()
-            Log.e("ScanAnatomy", "Backend Detection HTTP Failed: $code / $msg", e)
-            RepositoryResult.Failure(code, msg, e)
+            val response = api.detectOrgan(part)
+            val rawResponse = response.errorBody()?.string()
+                ?: response.body()?.toString()
+                ?: "empty response"
+            Log.d("ScanAnatomy", "detectOrgan response code=${response.code()} raw_response=$rawResponse")
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    RepositoryResult.Success(body)
+                } else {
+                    RepositoryResult.Failure(response.code(), "Response body was null", null)
+                }
+            } else {
+                RepositoryResult.Failure(response.code(), rawResponse, null)
+            }
         } catch (e: Exception) {
             Log.e("ScanAnatomy", "Backend Detection Network Call Failed: ${e.localizedMessage}", e)
             RepositoryResult.Failure(null, e.message ?: "Unknown error", e)
