@@ -32,8 +32,20 @@ class ChatWebSocketClient(private val httpClient: OkHttpClient) {
             // Close existing connection first
             disconnect()
             
-            val wsUrl = baseUrl.replace("http", "ws") + AppConfig.getWsChatPathDefault()
-            val request = Request.Builder().url(wsUrl).build()
+            val formattedBase = baseUrl.trimEnd('/')
+            val path = AppConfig.getWsChatPathDefault()
+            val wsScheme = formattedBase.replace("https", "wss").replace("http", "ws")
+            val rawUrl = "$wsScheme$path"
+            val wsUrl = if (token.isNotBlank()) {
+                val sep = if (rawUrl.contains("?")) "&" else "?"
+                "$rawUrl${sep}token=${java.net.URLEncoder.encode(token, "UTF-8")}"
+            } else rawUrl
+
+            val requestBuilder = Request.Builder().url(wsUrl)
+            if (token.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            val request = requestBuilder.build()
             
             webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
@@ -170,8 +182,20 @@ class VoiceWebSocketClient(private val httpClient: OkHttpClient) {
             // Close existing connection first
             disconnect()
             
-            val wsUrl = baseUrl.replace("http", "ws") + AppConfig.getWsVoicePathDefault()
-            val request = Request.Builder().url(wsUrl).build()
+            val formattedBase = baseUrl.trimEnd('/')
+            val path = AppConfig.getWsVoicePathDefault()
+            val wsScheme = formattedBase.replace("https", "wss").replace("http", "ws")
+            val rawUrl = "$wsScheme$path"
+            val wsUrl = if (token.isNotBlank()) {
+                val sep = if (rawUrl.contains("?")) "&" else "?"
+                "$rawUrl${sep}token=${java.net.URLEncoder.encode(token, "UTF-8")}"
+            } else rawUrl
+
+            val requestBuilder = Request.Builder().url(wsUrl)
+            if (token.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            val request = requestBuilder.build()
             
             webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
@@ -324,8 +348,20 @@ class ScanWebSocketClient(private val httpClient: OkHttpClient) {
             // Close existing connection first
             disconnect()
             
-            val wsUrl = baseUrl.replace("http", "ws") + AppConfig.getWsScanPathDefault()
-            val request = Request.Builder().url(wsUrl).build()
+            val formattedBase = baseUrl.trimEnd('/')
+            val path = AppConfig.getWsScanPathDefault()
+            val wsScheme = formattedBase.replace("https", "wss").replace("http", "ws")
+            val rawUrl = "$wsScheme$path"
+            val wsUrl = if (token.isNotBlank()) {
+                val sep = if (rawUrl.contains("?")) "&" else "?"
+                "$rawUrl${sep}token=${java.net.URLEncoder.encode(token, "UTF-8")}"
+            } else rawUrl
+
+            val requestBuilder = Request.Builder().url(wsUrl)
+            if (token.isNotBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            val request = requestBuilder.build()
             
             webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {

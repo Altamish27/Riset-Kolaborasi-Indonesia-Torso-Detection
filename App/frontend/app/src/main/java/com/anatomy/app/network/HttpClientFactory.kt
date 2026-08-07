@@ -21,6 +21,9 @@ object HttpClientFactory {
 
     private val TAG = "HttpClientFactory"
 
+    val client: OkHttpClient get() = createHttpClient()
+    val httpClient: OkHttpClient get() = createHttpClient()
+
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
@@ -28,7 +31,7 @@ object HttpClientFactory {
     }
     
     fun createApiService(context: Context): ApiService {
-        val baseUrl = getBaseUrl(context)
+        val baseUrl = com.anatomy.app.config.AppConfig.getBaseUrl()
         
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
@@ -73,17 +76,21 @@ object HttpClientFactory {
             }
         }
         
-        val httpClient = OkHttpClient.Builder()
+        val client = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(tokenInterceptor)
             .authenticator(tokenAuthenticator)
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
         
         val contentType = "application/json".toMediaType()
         
         val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(httpClient)
+            .client(client)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
         
@@ -104,7 +111,8 @@ object HttpClientFactory {
             .build()
     }
     
-    fun getBaseUrl(context: Context): String = AppConfig.getBaseUrlDefault()
+    fun getBaseUrl(): String = AppConfig.getBaseUrl()
+    fun getBaseUrl(context: Context): String = AppConfig.getBaseUrl(context)
 
     /**
      * Synchronously refresh the access token using /auth/refresh.

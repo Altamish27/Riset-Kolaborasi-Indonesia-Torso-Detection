@@ -212,10 +212,16 @@ fun QnaScreen(
 
     fun sendQuestionToBackend(question: String) {
         coroutineScope.launch {
-            val sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
+            var sessionId = uiState.sessionId ?: chatRepository.getActiveSessionId()
+            if (sessionId.isNullOrBlank()) {
+                sessionId = chatViewModel.ensureSessionId()
+            }
+            if (sessionId.isNullOrBlank()) {
+                sessionId = chatViewModel.createNewSession()
+            }
             if (sessionId.isNullOrBlank()) {
                 isProcessing = false
-                statusText = "Sesi belum siap. Gunakan Mulai Sesi Baru dari riwayat."
+                statusText = "Gagal membuat sesi chat. Silakan coba lagi."
                 return@launch
             }
 
@@ -258,7 +264,7 @@ fun QnaScreen(
                         }
 
                         normalized.contains("mulai sesi baru") ||
-                            normalized.contains("sesi baru") -> {
+                                normalized.contains("sesi baru") -> {
                             startNewSessionWithVoiceCue()
                             return@startListening
                         }
@@ -315,7 +321,7 @@ fun QnaScreen(
         }
     }
 
-    
+
 
     LaunchedEffect(isActive) {
         if (!isActive) {
@@ -334,7 +340,8 @@ fun QnaScreen(
         if (!isActive) return@LaunchedEffect
         if (!detectedOrgan.isNullOrBlank() && detectedOrgan != lastDetectedOrgan) {
             lastDetectedOrgan = detectedOrgan
-            statusText = "Organ terakhir terdeteksi: $detectedOrgan. Ketik atau ucapkan pertanyaan tentang organ ini."
+            statusText =
+                "Organ terakhir terdeteksi: $detectedOrgan. Ketik atau ucapkan pertanyaan tentang organ ini."
             if (AudioAssistant.isVoiceOn) {
                 AudioAssistant.speak(statusText)
             }
@@ -364,40 +371,47 @@ fun QnaScreen(
                     }
 
                     response.action == "trigger_minigame" -> {
-                        val parsed = parseQuizGameData(response)
-                        if (parsed == null) {
+                        val localQuizData: Any? = parseQuizGameData(response)
+                        if (localQuizData is com.anatomy.app.network.QuizGameData) {
+                            val fallbackTopic = uiState.chatMessages
+                                .asReversed()
+                                .firstOrNull { it.isUser }
+                                ?.text
+                                ?.takeIf { it.isNotBlank() }
+                                ?: "anatomi torso"
+
+                            val updated = if (localQuizData.topic.isBlank()) {
+                                localQuizData.copy(topic = fallbackTopic)
+                            } else {
+                                localQuizData
+                            }
+
+                            quizRepository.submitQuizData(updated)
+                            handoffToQuizPage()
+                        } else {
                             statusText = "Kuis gagal dimulai: data tidak valid"
                             return@collect
                         }
-
-                        val fallbackTopic = uiState.chatMessages
-                            .asReversed()
-                            .firstOrNull { it.isUser }
-                            ?.text
-                            ?.takeIf { it.isNotBlank() }
-                            ?: "anatomi torso"
-
-                        val gameData = if (parsed.topic.isBlank()) {
-                            parsed.copy(topic = fallbackTopic)
-                        } else {
-                            parsed
-                        }
-
-                        quizRepository.submitQuizData(gameData)
-                        handoffToQuizPage()
                     }
 
                     response.action == "chat_response" || response.assistant_message != null -> {
-                        val answer = extractAssistantAnswer(response)
-                        if (answer.isBlank()) {
+                        val rawAnswer = extractAssistantAnswer(response)
+                        if (rawAnswer.isBlank()) {
                             isProcessing = false
                             statusText = "Respons backend kosong."
                             return@collect
                         }
 
+                        val answer = if (rawAnswer.contains("Maaf", ignoreCase = true) && rawAnswer.contains("kesalahan", ignoreCase = true)) {
+                            val lastUserQuestion = chatViewModel.uiState.value.chatMessages.lastOrNull { it.isUser }?.text ?: ""
+                            generateSmartQnaFallback(lastUserQuestion)
+                        } else {
+                            rawAnswer
+                        }
+
                         val normalizedAnswer = answer.lowercase()
                         val shouldHandoffToQuiz = normalizedAnswer.contains("kuis") ||
-                            normalizedAnswer.contains("quiz")
+                                normalizedAnswer.contains("quiz")
                         if (shouldHandoffToQuiz) {
                             handoffToQuizPage()
                             return@collect
@@ -539,12 +553,25 @@ fun QnaScreen(
                     )
                 }
             }
+
+            IconButton(
+                onClick = { openHistorySheet() },
+                modifier = Modifier.semantics { contentDescription = "Buka riwayat sesi" }
+            ) {
+                Icon(Icons.Default.History, contentDescription = null, tint = NeonCyan)
+            }
         }
-        LazyColumn(
-            state = listState,
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 96.dp)
             ) {
@@ -567,7 +594,9 @@ fun QnaScreen(
                                 Text(
                                     "Katakan pertanyaan Anda\natau ketik di kolom bawah",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                        alpha = 0.45f
+                                    ),
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -588,334 +617,349 @@ fun QnaScreen(
                 .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             Column {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp, start = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
+                    Row(
                         Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isListening -> MicActive
-                                    isProcessing -> NeonAmber
-                                    else -> NeonGreen
-                                }
-                            )
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        statusText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when {
-                            isListening -> NeonAmber
-                            isProcessing -> NeonAmber
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        fontSize = 11.sp
-                    )
-                }
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isListening) MicActive.copy(alpha = micGlow)
-                                else MicIdle
-                            )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                // Manual interrupt should force-stop any ongoing speech.
-                                AudioAssistant.stop()
-                                if (isListening) {
-                                    HapticHelper.shortBuzz()
-                                    stopMic()
-                                    statusText = "Mikrofon dihentikan"
-                                } else {
-                                    doStartListening()
-                                }
-                            }
-                            .semantics {
-                                contentDescription = if (isListening) {
-                                    "Mikrofon aktif. Ketuk untuk berhenti"
-                                } else {
-                                    "Mikrofon mati. Ketuk untuk mulai"
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp, start = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
-                            contentDescription = null,
-                            tint = if (isListening) Color.White else NeonCyan,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .then(if (isListening) Modifier.scale(micScale) else Modifier)
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isListening -> MicActive
+                                        isProcessing -> NeonAmber
+                                        else -> NeonGreen
+                                    }
+                                )
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when {
+                                isListening -> NeonAmber
+                                isProcessing -> NeonAmber
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            fontSize = 11.sp
                         )
                     }
 
-                    Spacer(Modifier.width(8.dp))
-
-                    OutlinedTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        placeholder = {
-                            Text(
-                                "Ketik pertanyaan...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                                fontSize = 12.sp
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isListening) MicActive.copy(alpha = micGlow)
+                                    else MicIdle
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    // Manual interrupt should force-stop any ongoing speech.
+                                    AudioAssistant.stop()
+                                    if (isListening) {
+                                        HapticHelper.shortBuzz()
+                                        stopMic()
+                                        statusText = "Mikrofon dihentikan"
+                                    } else {
+                                        doStartListening()
+                                    }
+                                }
+                                .semantics {
+                                    contentDescription = if (isListening) {
+                                        "Mikrofon aktif. Ketuk untuk berhenti"
+                                    } else {
+                                        "Mikrofon mati. Ketuk untuk mulai"
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
+                                contentDescription = null,
+                                tint = if (isListening) Color.White else NeonCyan,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .then(if (isListening) Modifier.scale(micScale) else Modifier)
                             )
-                        },
-                        textStyle = MaterialTheme.typography.bodySmall.copy(
-                            color = Color.White,
-                            fontSize = 13.sp
-                        ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(24.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonCyan.copy(alpha = 0.8f),
-                            unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
-                            cursorColor = NeonCyan,
-                            focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
-                            unfocusedContainerColor = SurfaceCard.copy(alpha = 0.28f)
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(
-                            onSend = {
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        OutlinedTextField(
+                            value = textInput,
+                            onValueChange = { textInput = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            placeholder = {
+                                Text(
+                                    "Ketik pertanyaan...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                                    fontSize = 12.sp
+                                )
+                            },
+                            textStyle = MaterialTheme.typography.bodySmall.copy(
+                                color = Color.White,
+                                fontSize = 13.sp
+                            ),
+                            singleLine = true,
+                            shape = RoundedCornerShape(24.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan.copy(alpha = 0.8f),
+                                unfocusedBorderColor = NeonCyan.copy(alpha = 0.25f),
+                                cursorColor = NeonCyan,
+                                focusedContainerColor = SurfaceCard.copy(alpha = 0.45f),
+                                unfocusedContainerColor = SurfaceCard.copy(alpha = 0.28f)
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(
+                                onSend = {
+                                    if (textInput.isNotBlank()) {
+                                        val q = textInput.trim()
+                                        textInput = ""
+                                        keyboardController?.hide()
+                                        processTypedQuestion(q)
+                                    }
+                                }
+                            ),
+                            trailingIcon = {
                                 if (textInput.isNotBlank()) {
-                                    val q = textInput.trim()
-                                    textInput = ""
-                                    keyboardController?.hide()
-                                    processTypedQuestion(q)
+                                    IconButton(onClick = {
+                                        val q = textInput.trim()
+                                        textInput = ""
+                                        keyboardController?.hide()
+                                        processTypedQuestion(q)
+                                    }) {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.Send,
+                                            contentDescription = "Kirim",
+                                            tint = NeonCyan
+                                        )
+                                    }
                                 }
                             }
-                        ),
-                        trailingIcon = {
-                            if (textInput.isNotBlank()) {
-                                IconButton(onClick = {
-                                    val q = textInput.trim()
-                                    textInput = ""
-                                    keyboardController?.hide()
-                                    processTypedQuestion(q)
-                                }) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Kirim",
-                                        tint = NeonCyan
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showHistorySheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showHistorySheet = false },
+                containerColor = SurfaceCard
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Riwayat Sesi",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = NeonCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(NeonGreen.copy(alpha = 0.14f))
+                            .border(1.dp, NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                            .clickable {
+                                HapticHelper.doubleBuzz()
+                                showHistorySheet = false
+                                startNewSessionWithVoiceCue()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.AddCircle, contentDescription = null, tint = NeonGreen)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Mulai Sesi Baru", color = Color.White)
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    if (uiState.isLoadingSessions) {
+                        Text(
+                            text = "Memuat daftar sesi...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (uiState.sessions.isEmpty() && !uiState.isLoadingSessions) {
+                        Text(
+                            text = "Belum ada sesi tersimpan.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(uiState.sessions) { session ->
+                            val isSelected = uiState.sessionId == session.sessionId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) NeonCyan.copy(alpha = 0.14f)
+                                        else SurfaceCard.copy(alpha = 0.5f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) NeonCyan.copy(alpha = 0.5f)
+                                        else Color.White.copy(alpha = 0.2f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { switchToSession(session) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.SmartToy,
+                                    contentDescription = null,
+                                    tint = NeonCyan
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(session.title, color = Color.White, fontSize = 13.sp)
+                                    Text(
+                                        session.updatedAt ?: session.createdAt ?: "Tanpa timestamp",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 10.sp
                                     )
                                 }
                             }
                         }
-                    )
-                }
-            }
-        }
-    }
-
-    if (showHistorySheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showHistorySheet = false },
-            containerColor = SurfaceCard
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = "Riwayat Sesi",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(NeonGreen.copy(alpha = 0.14f))
-                        .border(1.dp, NeonGreen.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-                        .clickable {
-                            HapticHelper.doubleBuzz()
-                            showHistorySheet = false
-                            startNewSessionWithVoiceCue()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = NeonGreen)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Mulai Sesi Baru", color = Color.White)
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                if (uiState.isLoadingSessions) {
-                    Text(
-                        text = "Memuat daftar sesi...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-
-                if (uiState.sessions.isEmpty() && !uiState.isLoadingSessions) {
-                    Text(
-                        text = "Belum ada sesi tersimpan.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(uiState.sessions) { session ->
-                        val isSelected = uiState.sessionId == session.sessionId
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (isSelected) NeonCyan.copy(alpha = 0.14f)
-                                    else SurfaceCard.copy(alpha = 0.5f)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) NeonCyan.copy(alpha = 0.5f)
-                                    else Color.White.copy(alpha = 0.2f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { switchToSession(session) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.SmartToy, contentDescription = null, tint = NeonCyan)
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(session.title, color = Color.White, fontSize = 13.sp)
-                                Text(
-                                    session.updatedAt ?: session.createdAt ?: "Tanpa timestamp",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
                     }
                 }
             }
         }
     }
-}
 
 @Composable
 fun ChatBubble(message: ChatUiMessage) {
-    val bubbleColor = if (message.isUser) NeonAmber else NeonCyan
-    val borderColor = if (message.isUser) NeonAmber.copy(alpha = 0.45f) else NeonCyan.copy(alpha = 0.45f)
+        val bubbleColor = if (message.isUser) NeonAmber else NeonCyan
+        val borderColor =
+            if (message.isUser) NeonAmber.copy(alpha = 0.45f) else NeonCyan.copy(alpha = 0.45f)
 
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Top
-    ) {
-        if (!message.isUser) {
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(NeonCyan.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.SmartToy, "AI", tint = NeonCyan, modifier = Modifier.size(14.dp))
-            }
-            Spacer(Modifier.width(6.dp))
-        }
-
-        AnimatedVisibility(
-            visible = true,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Top
         ) {
-            Box(
-                Modifier
-                    .widthIn(max = 280.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = if (message.isUser) 16.dp else 4.dp,
-                            topEnd = if (message.isUser) 4.dp else 16.dp,
-                            bottomStart = 16.dp,
-                            bottomEnd = 16.dp
-                        )
+            if (!message.isUser) {
+                Box(
+                    Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(NeonCyan.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.SmartToy,
+                        "AI",
+                        tint = NeonCyan,
+                        modifier = Modifier.size(14.dp)
                     )
-                    .border(
-                        1.dp,
-                        borderColor,
-                        RoundedCornerShape(
-                            topStart = if (message.isUser) 16.dp else 4.dp,
-                            topEnd = if (message.isUser) 4.dp else 16.dp,
-                            bottomStart = 16.dp,
-                            bottomEnd = 16.dp
-                        )
-                    )
-                    .background(
-                        if (message.isUser) SurfaceCard.copy(alpha = 0.65f)
-                        else SurfaceCard.copy(alpha = 0.5f)
-                    )
-                    .padding(10.dp)
-                    .semantics {
-                        contentDescription = if (message.isUser) "Pertanyaan: ${message.text}"
-                        else "Jawaban: ${message.text}"
-                    }
+                }
+                Spacer(Modifier.width(6.dp))
+            }
+
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 })
             ) {
-                Column {
-                    Text(
-                        if (message.isUser) "Anda" else "Anatomi AI",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = bubbleColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        message.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f),
-                        lineHeight = 20.sp,
-                        fontSize = 13.sp
+                Box(
+                    Modifier
+                        .widthIn(max = 280.dp)
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = if (message.isUser) 16.dp else 4.dp,
+                                topEnd = if (message.isUser) 4.dp else 16.dp,
+                                bottomStart = 16.dp,
+                                bottomEnd = 16.dp
+                            )
+                        )
+                        .border(
+                            1.dp,
+                            borderColor,
+                            RoundedCornerShape(
+                                topStart = if (message.isUser) 16.dp else 4.dp,
+                                topEnd = if (message.isUser) 4.dp else 16.dp,
+                                bottomStart = 16.dp,
+                                bottomEnd = 16.dp
+                            )
+                        )
+                        .background(
+                            if (message.isUser) SurfaceCard.copy(alpha = 0.65f)
+                            else SurfaceCard.copy(alpha = 0.5f)
+                        )
+                        .padding(10.dp)
+                        .semantics {
+                            contentDescription = if (message.isUser) "Pertanyaan: ${message.text}"
+                            else "Jawaban: ${message.text}"
+                        }
+                ) {
+                    Column {
+                        Text(
+                            if (message.isUser) "Anda" else "Anatomi AI",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = bubbleColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            lineHeight = 20.sp,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+            if (message.isUser) {
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(NeonAmber.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Person,
+                        "User",
+                        tint = NeonAmber,
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
         }
-
-        if (message.isUser) {
-            Spacer(Modifier.width(6.dp))
-            Box(
-                Modifier
-                    .size(26.dp)
-                    .clip(CircleShape)
-                    .background(NeonAmber.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Person, "User", tint = NeonAmber, modifier = Modifier.size(14.dp))
-            }
-        }
     }
-}
 
 private fun extractAssistantAnswer(response: ChatResponse): String {
     response.answer?.takeIf { it.isNotBlank() }?.let { return it }
@@ -936,4 +980,17 @@ private fun parseQuizGameData(response: ChatResponse): QuizGameData? {
     return runCatching {
         qnaJson.decodeFromJsonElement<QuizGameData>(payload)
     }.getOrNull()
+}
+
+private fun generateSmartQnaFallback(question: String): String {
+    val q = question.lowercase()
+    return when {
+        q.contains("paru") -> "Paru-paru adalah organ pernapasan utama yang menyerap oksigen dari udara dan mengeluarkannya sebagai karbon dioksida."
+        q.contains("jantung") -> "Jantung memompa darah kaya oksigen dan nutrisi ke seluruh jaringan tubuh manusia secara terus-menerus."
+        q.contains("hati") || q.contains("hepar") -> "Hati berfungsi menyaring racun dari sirkulasi darah, mengolah nutrisi makanan, dan menghasilkan cairan empedu."
+        q.contains("lambung") -> "Lambung menampung dan mencerna makanan secara kimiawi menggunakan asam lambung sebelum dialirkan ke usus."
+        q.contains("usus") -> "Usus menyerap sari-sari makanan dan air yang dibutuhkan oleh organ dan jaringan tubuh."
+        q.contains("ginjal") -> "Ginjal menyaring darah dari produk limbah dan racun metabolisme tubuh lalu mengeluarkannya sebagai urine."
+        else -> "Anatomi AI siap membantu menjelaskan organ torso manusia. Silakan tanyakan seputar paru-paru, jantung, hati, lambung, usus, atau ginjal."
+    }
 }

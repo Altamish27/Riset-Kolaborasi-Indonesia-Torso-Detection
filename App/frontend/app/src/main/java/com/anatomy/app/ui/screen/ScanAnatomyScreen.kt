@@ -6,7 +6,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,19 +41,26 @@ import androidx.camera.core.ImageCaptureException
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.suspendCancellableCoroutine
 // Camera capture handled via TFLiteObjectAnalyzer.requestCapture
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
- 
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.anatomy.app.repository.DetectionRepository
 import com.anatomy.app.helper.HapticHelper
 import com.anatomy.app.helper.AudioAssistant
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.anatomy.app.helper.VoiceRecognitionHelper
 import com.anatomy.app.services.LLMService
 import com.anatomy.app.ui.theme.NeonAmber
@@ -208,28 +217,39 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             return
         }
         try {
+            // PreviewView.bitmap MUST be fetched on the Main Thread
+            val bmp = withContext(Dispatchers.Main) {
+                preview.bitmap
+            }
+
             val bytes = withContext(Dispatchers.IO) {
-                preview.bitmap?.let { bmp ->
+                if (bmp != null) {
                     val baos = ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                     baos.toByteArray()
-                } ?: captureImageCaptureToBytes(context, imageCaptureRef)
+                } else {
+                    captureImageCaptureToBytes(context, imageCaptureRef)
+                }
             }
 
             if (bytes == null || bytes.isEmpty()) {
-                statusText = "Gagal menangkap gambar. Coba lagi."
-                AudioAssistant.speak(statusText)
+                withContext(Dispatchers.Main) {
+                    statusText = "Gagal menangkap gambar. Coba lagi."
+                    AudioAssistant.speak(statusText)
+                }
                 return
             }
 
             processCapturedBytes(bytes)
         } catch (e: Exception) {
             Log.e("ScanAnatomyScreen", "Capture error", e)
-            statusText = "Gagal mengambil gambar: ${e.message}"
-            AudioAssistant.speak("Gagal mengambil gambar. Coba lagi.")
+            withContext(Dispatchers.Main) {
+                statusText = "Gagal mengambil gambar: ${e.message}"
+                AudioAssistant.speak("Gagal mengambil gambar. Coba lagi.")
+            }
         }
     }
-    // Reminder: helper capture function is defined outside the composable to keep top-level private visibility valid.
+
     fun speak(text: String) {
         if (!AudioAssistant.isVoiceOn) return
         AudioAssistant.speak(text)
@@ -455,6 +475,29 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .semantics { contentDescription = "Halaman Mode Scan Anatomi" }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (!isCameraReady) {
+                            val notReady = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
+                            statusText = notReady
+                            AudioAssistant.speak(notReady)
+                            return@detectTapGestures
+                        }
+                        if (isUploading) return@detectTapGestures
+                        isUploading = true
+                        val startMsg = "Mengambil gambar, mohon tunggu..."
+                        statusText = startMsg
+                        AudioAssistant.speak(startMsg)
+                        HapticHelper.shortBuzz()
+
+                        scope.launch {
+                            captureFromPreviewAndProcess(previewRef)
+                            isUploading = false
+                        }
+                    }
+                )
+            }
     ) {
         CameraPreview(
             isActive = isActive,
@@ -547,33 +590,35 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                 // Capture snapshot from CameraX preview and upload for backend detection
                 // `isUploading` and `processCapturedBytes` are declared above and shared.
 
-                // Manual shutter button for accessible capture
-                Button(
-                    onClick = {
-                        if (!isCameraReady) {
-                            val notReady = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
-                            statusText = notReady
-                            AudioAssistant.speak(notReady)
-                            return@Button
-                        }
-                        if (isUploading) return@Button
-                        isUploading = true
-                        val startMsg = "Mengambil gambar, mohon tunggu..."
-                        statusText = startMsg
-                        AudioAssistant.speak(startMsg)
-                        HapticHelper.shortBuzz()
-
-                        scope.launch {
-                            captureFromPreviewAndProcess(previewRef)
-                            isUploading = false
-                        }
-                    },
+                // Clear accessibility guidance card for visually impaired users
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
-                        .semantics { contentDescription = "Tombol ambil foto model organ tubuh untuk dideteksi" }
-                        .height(48.dp)
-                        .widthIn(min = 120.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .semantics {
+                            contentDescription = "Panduan: Ketuk dua kali di mana saja pada layar atau ucapkan pindai untuk mengambil foto."
+                        }
                 ) {
-                    Text(text = "Ambil Foto untuk Deteksi")
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TouchApp,
+                            contentDescription = null,
+                            tint = NeonCyan,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Ketuk 2x layar di mana saja atau ucapkan 'pindai' untuk mendeteksi",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
 
                 if (isUploading) {
@@ -585,40 +630,44 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
     }
 }
 
-private suspend fun captureImageCaptureToBytes(context: android.content.Context, imageCapture: ImageCapture?): ByteArray? {
+private suspend fun captureImageCaptureToBytes(
+    context: android.content.Context,
+    imageCapture: androidx.camera.core.ImageCapture?
+): ByteArray? {
     if (imageCapture == null) return null
-
-    return suspendCancellableCoroutine { continuation ->
-        val tempFile = File.createTempFile("scan_image", ".jpg", context.cacheDir)
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+    return suspendCancellableCoroutine<ByteArray?> { cont ->
+        val tempFile = File(context.cacheDir, "scan_capture_${System.currentTimeMillis()}.jpg")
+        val outputOptions = androidx.camera.core.ImageCapture.OutputFileOptions.Builder(tempFile).build()
 
         imageCapture.takePicture(
             outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onError(exception: ImageCaptureException) {
-                    tempFile.delete()
-                    if (continuation.isActive) {
-                        continuation.resumeWithException(exception)
-                    }
-                }
-
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+            androidx.core.content.ContextCompat.getMainExecutor(context),
+            object : androidx.camera.core.ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: androidx.camera.core.ImageCapture.OutputFileResults) {
                     try {
                         val bytes = tempFile.readBytes()
-                        continuation.resume(bytes) {}
+                        if (cont.isActive) {
+                            cont.resume(bytes)
+                        }
                     } catch (e: Exception) {
-                        if (continuation.isActive) {
-                            continuation.resumeWithException(e)
+                        if (cont.isActive) {
+                            cont.resumeWithException(e)
                         }
                     } finally {
                         tempFile.delete()
                     }
                 }
+
+                override fun onError(exception: androidx.camera.core.ImageCaptureException) {
+                    tempFile.delete()
+                    if (cont.isActive) {
+                        cont.resumeWithException(exception)
+                    }
+                }
             }
         )
 
-        continuation.invokeOnCancellation {
+        cont.invokeOnCancellation {
             tempFile.delete()
         }
     }

@@ -76,7 +76,7 @@ class VoiceRecognitionHelper(private val context: Context) {
                         Log.e(TAG, "Recognition error: $error")
                         isCurrentlyListening = false
                         if (isReleased) return
-                        // Dispatch callback on main thread
+                        internalDestroy()
                         mainHandler.post { onError(error) }
                     }
 

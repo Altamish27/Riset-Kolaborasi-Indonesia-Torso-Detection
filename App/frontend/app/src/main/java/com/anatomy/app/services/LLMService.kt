@@ -57,29 +57,33 @@ class LLMService(private val context: Context) {
         }
 
         return try {
-            // Build a natural prompt for the LLM
-                val prompt = "Jelaskan organ $sanitized secara singkat, maksimal 3-4 kalimat. " +
-                    "Fokus pada fungsi utama organ ini dalam bahasa Indonesia yang mudah dipahami."
+            val prompt = "Jelaskan organ $sanitized secara singkat, maksimal 3-4 kalimat. " +
+                "Fokus pada fungsi utama organ ini dalam bahasa Indonesia yang mudah dipahami."
             
             Log.d(TAG, "Requesting LLM explanation for: $organName via unified WebSocket")
-            
-            // Use unified WebSocket - no need for separate connection!
             val explanation = requestViaUnifiedWebSocket(sanitized, prompt)
             
-            if (explanation.isBlank()) {
-                Log.e(TAG, "Empty explanation received for $organName")
-                "Penjelasan tidak tersedia untuk $organName."
+            if (explanation.isBlank() || explanation.contains("tidak tersedia", ignoreCase = true) || explanation.contains("Maaf", ignoreCase = true)) {
+                getFallbackExplanation(sanitized)
             } else {
-                Log.d(TAG, "LLM explanation received: ${explanation.take(50)}...")
-                explanation
+                explanation.trim()
             }
-            
-        } catch (e: TimeoutCancellationException) {
-            Log.e(TAG, "Timeout waiting for LLM response for $organName")
-            "Maaf, backend terlalu lama merespons. Coba lagi."
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting LLM explanation for $organName", e)
-            "Maaf, tidak dapat mendapatkan penjelasan saat ini."
+            Log.e(TAG, "Error or timeout getting LLM explanation for $organName, providing fallback", e)
+            getFallbackExplanation(sanitized)
+        }
+    }
+
+    private fun getFallbackExplanation(organ: String): String {
+        val lower = organ.lowercase()
+        return when {
+            lower.contains("paru") -> "Paru-Paru adalah organ pernapasan utama di rongga dada. Berfungsi menyerap oksigen dari udara dan mengeluarkannya dalam bentuk karbon dioksida."
+            lower.contains("jantung") -> "Jantung adalah organ otot utama yang memompa darah kaya oksigen ke seluruh jaringan dan organ tubuh manusia."
+            lower.contains("hati") || lower.contains("hepar") -> "Hati adalah organ metabolik terbesar yang memproses nutrisi, memproduksi cairan empedu, dan menetralkan racun."
+            lower.contains("lambung") -> "Lambung berfungsi mengolah makanan secara kimiawi dan mekanis menggunakan asam lambung sebelum diserap oleh usus."
+            lower.contains("usus") -> "Usus berfungsi menyerap sari nutrisi makanan dan air untuk menjaga energi serta metabolisme tubuh."
+            lower.contains("ginjal") -> "Ginjal menyaring sisa metabolisme darah dan mengeluarkan limbah dalam bentuk urine untuk menjaga keseimbangan cairan."
+            else -> "Organ $organ terletak pada rongga torso manusia dan berperan vital dalam menjaga kelangsungan sistem fungsi organ tubuh."
         }
     }
 

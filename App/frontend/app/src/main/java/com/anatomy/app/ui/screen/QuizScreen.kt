@@ -206,8 +206,12 @@ fun QuizScreen(
             },
             onError = { code ->
                 isListening = false
-                voiceStatus = "Error mikrofon: $code"
+                voiceStatus = "Kendala suara. Memuat kuis Anatomi Torso..."
                 HapticHelper.doubleBuzz()
+                AudioAssistant.speak("Kendala mikrofon terdeteksi. Memuat kuis Anatomi Torso...")
+                coroutineScope.launch {
+                    quizViewModel.generateNewQuiz("Anatomi Torso")
+                }
             }
         )
     }

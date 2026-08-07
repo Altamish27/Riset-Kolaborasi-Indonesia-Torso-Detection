@@ -34,6 +34,8 @@ object AppConfig {
      * Get Base URL value (non-blocking, uses default if not configured)
      */
     fun getBaseUrlDefault(): String = DEFAULT_BASE_URL
+    fun getBaseUrl(): String = DEFAULT_BASE_URL
+    fun getBaseUrl(context: Context): String = DEFAULT_BASE_URL
 
     /**
      * Set Base URL in configuration
