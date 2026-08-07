@@ -529,20 +529,22 @@ fun QnaScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
-                        if (!detectedOrgan.isNullOrBlank()) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "Organ terbaru: $detectedOrgan",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = NeonGreen,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 12.dp),
+                if (!detectedOrgan.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Organ terbaru: $detectedOrgan",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NeonGreen,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 96.dp)
             ) {

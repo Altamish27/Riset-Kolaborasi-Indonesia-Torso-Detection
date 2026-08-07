@@ -200,41 +200,6 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
         }
     }
 
-    // Helper to capture bitmap from PreviewView and pass bytes to processor
-    private suspend fun captureImageCaptureToBytes(imageCapture: ImageCapture?): ByteArray? {
-        if (imageCapture == null) return null
-        return suspendCancellableCoroutine { cont ->
-            val tempFile = File(context.cacheDir, "scan_capture_${System.currentTimeMillis()}.jpg")
-            val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
-
-            imageCapture.takePicture(
-                outputOptions,
-                ContextCompat.getMainExecutor(context),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                        try {
-                            val bytes = tempFile.readBytes()
-                            cont.resume(bytes)
-                        } catch (e: Exception) {
-                            cont.resumeWithException(e)
-                        } finally {
-                            tempFile.delete()
-                        }
-                    }
-
-                    override fun onError(exception: ImageCaptureException) {
-                        tempFile.delete()
-                        cont.resumeWithException(exception)
-                    }
-                }
-            )
-
-            cont.invokeOnCancellation {
-                tempFile.delete()
-            }
-        }
-    }
-
     suspend fun captureFromPreviewAndProcess(preview: PreviewView?) {
         if (!isCameraReady || preview == null) {
             val message = "Pratinjau kamera belum siap, silakan tunggu sebentar dan coba lagi."
@@ -248,7 +213,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                     val baos = ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                     baos.toByteArray()
-                } ?: captureImageCaptureToBytes(imageCaptureRef)
+                } ?: captureImageCaptureToBytes(context, imageCaptureRef)
             }
 
             if (bytes == null || bytes.isEmpty()) {
@@ -264,7 +229,7 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
             AudioAssistant.speak("Gagal mengambil gambar. Coba lagi.")
         }
     }
-
+    // Reminder: helper capture function is defined outside the composable to keep top-level private visibility valid.
     fun speak(text: String) {
         if (!AudioAssistant.isVoiceOn) return
         AudioAssistant.speak(text)
@@ -616,6 +581,45 @@ fun ScanAnatomyScreen(isActive: Boolean = true) {
                     CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = "Sedang menganalisis gambar" })
                 }
             }
+        }
+    }
+}
+
+private suspend fun captureImageCaptureToBytes(context: android.content.Context, imageCapture: ImageCapture?): ByteArray? {
+    if (imageCapture == null) return null
+
+    return suspendCancellableCoroutine { continuation ->
+        val tempFile = File.createTempFile("scan_image", ".jpg", context.cacheDir)
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
+
+        imageCapture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exception: ImageCaptureException) {
+                    tempFile.delete()
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(exception)
+                    }
+                }
+
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    try {
+                        val bytes = tempFile.readBytes()
+                        continuation.resume(bytes) {}
+                    } catch (e: Exception) {
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(e)
+                        }
+                    } finally {
+                        tempFile.delete()
+                    }
+                }
+            }
+        )
+
+        continuation.invokeOnCancellation {
+            tempFile.delete()
         }
     }
 }
